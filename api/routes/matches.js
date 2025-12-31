@@ -38,9 +38,11 @@ router.get('/:id/stream', async (req, res) => {
       return res.status(404).json({ error: 'Partida não encontrada' });
     }
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
+    res.write(`retry: 3000\n\n`);
     let list = sseClients.get(Number(id));
     if (!list) {
       list = new Set();

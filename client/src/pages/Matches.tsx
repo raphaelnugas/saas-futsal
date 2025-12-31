@@ -105,8 +105,19 @@ const Matches: React.FC = () => {
     black_score?: number
     orange_score?: number
   }>({ open: false, matchId: null, loading: false, stats: [], black_ids: [], orange_ids: [] })
+  const [tieModal, setTieModal] = useState<{ open: boolean; choice: 'par'|'impar'|null }>(() => ({ open: false, choice: null }))
+  const [consecutiveUnchanged, setConsecutiveUnchanged] = useState<{ black: number; orange: number }>(() => {
+    try {
+      const raw = localStorage.getItem('matchConsecutiveUnchanged')
+      return raw ? JSON.parse(raw) as { black: number; orange: number } : { black: 0, orange: 0 }
+    } catch {
+      return { black: 0, orange: 0 }
+    }
+  })
   const [connectionStatus, setConnectionStatus] = useState<'online'|'reconnecting'|'offline'>('offline')
   const sseRef = useRef<EventSource | null>(null)
+  const sseAttemptsRef = useRef<number>(0)
+  const pollIntervalRef = useRef<number | null>(null)
 
   useEffect(() => {
     fetchData()
@@ -239,7 +250,14 @@ const Matches: React.FC = () => {
         await api.post(`/api/matches/${currentMatchId}/stats-goal`, item.payload)
         delete q[i]
         changed = true
-      } catch {
+      } catch (e: unknown) {
+        const err = e as { response?: { status?: number } }
+        const st = err?.response?.status
+        if (st === 403) {
+          delete q[i]
+          changed = true
+          continue
+        }
         break
       }
     }
@@ -396,6 +414,8 @@ const Matches: React.FC = () => {
         black: teams.black.map(p => p.id),
         orange: teams.orange.map(p => p.id),
       }))
+      setConsecutiveUnchanged({ black: 0, orange: 0 })
+      localStorage.setItem('matchConsecutiveUnchanged', JSON.stringify({ black: 0, orange: 0 }))
       try {
         localStorage.setItem('matchBench', JSON.stringify(bench.map(p => p.id)))
       } catch { void 0 }
@@ -634,6 +654,27 @@ const Matches: React.FC = () => {
     return () => clearInterval(i)
   }, [matchInProgress, currentMatch?.startTime])
 
+  const startPolling = async () => {
+    if (!currentMatchId) return
+    try {
+      const statsResp = await api.get(`/api/matches/${currentMatchId}/stats`)
+      const stats = (statsResp.data?.stats || []) as StatEvent[]
+      setMatchStats(stats)
+      const blackGoals = stats.filter(ev => ev.team_scored === 'black').length
+      const orangeGoals = stats.filter(ev => ev.team_scored === 'orange').length
+      setCurrentMatch(prev => prev ? { ...prev, blackScore: blackGoals, orangeScore: orangeGoals } : prev)
+      const rawTicker = localStorage.getItem('matchTicker')
+      if (rawTicker) {
+        try {
+          const t = JSON.parse(rawTicker) as { startTime: string; blackScore: number; orangeScore: number }
+          t.blackScore = blackGoals
+          t.orangeScore = orangeGoals
+          localStorage.setItem('matchTicker', JSON.stringify(t))
+        } catch { void 0 }
+      }
+    } catch { void 0 }
+  }
+
   useEffect(() => {
     const onlineHandler = () => {
       try {
@@ -658,6 +699,10 @@ const Matches: React.FC = () => {
         try { sseRef.current.close() } catch { void 0 }
         sseRef.current = null
       }
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
       setConnectionStatus(navigator.onLine ? 'online' : 'offline')
       return
     }
@@ -668,9 +713,20 @@ const Matches: React.FC = () => {
       sseRef.current = es
       es.onopen = () => {
         setConnectionStatus('online')
+        sseAttemptsRef.current = 0
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+        }
       }
       es.onerror = () => {
         setConnectionStatus('reconnecting')
+        sseAttemptsRef.current = Math.min(10, sseAttemptsRef.current + 1)
+        if (sseAttemptsRef.current >= 5 && !pollIntervalRef.current) {
+          pollIntervalRef.current = window.setInterval(() => {
+            startPolling()
+          }, 4000)
+        }
       }
       es.addEventListener('ping', () => {
         setConnectionStatus('online')
@@ -710,6 +766,10 @@ const Matches: React.FC = () => {
       if (sseRef.current) {
         try { sseRef.current.close() } catch { void 0 }
         sseRef.current = null
+      }
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
       }
     }
   }, [matchInProgress, currentMatchId])
@@ -855,30 +915,61 @@ const Matches: React.FC = () => {
 
   const prepareNextTeamsRotation = (blackScore: number, orangeScore: number) => {
     try {
+      const benchIdsAll = bench.map(p => p.id)
+      const currentBlackIds = teams.black.map(p => p.id)
+      const currentOrangeIds = teams.orange.map(p => p.id)
       if (blackScore === orangeScore) {
-        // empate: mantém times
+        const totalBenchNeeded = teams.black.length + teams.orange.length
+        if (bench.length >= totalBenchNeeded) {
+          const pool = players.filter(p => benchIdsAll.includes(p.id)).slice(0, totalBenchNeeded)
+          const { black: nextBlack, orange: nextOrange } = sortTeamsLocal(pool)
+          const newBenchIds = [...benchIdsAll.slice(totalBenchNeeded), ...currentBlackIds, ...currentOrangeIds]
+          setTeams({ black: nextBlack, orange: nextOrange })
+          setBench(players.filter(p => newBenchIds.includes(p.id)))
+          localStorage.setItem('matchTeams', JSON.stringify({ black: nextBlack.map(p => p.id), orange: nextOrange.map(p => p.id) }))
+          localStorage.setItem('matchBench', JSON.stringify(newBenchIds))
+          setConsecutiveUnchanged({ black: 0, orange: 0 })
+          localStorage.setItem('matchConsecutiveUnchanged', JSON.stringify({ black: 0, orange: 0 }))
+          return
+        }
+        setTieModal({ open: true, choice: null })
         return
       }
       const loser: 'black' | 'orange' = blackScore > orangeScore ? 'orange' : 'black'
       const winner: 'black' | 'orange' = loser === 'black' ? 'orange' : 'black'
       const loserSize = teams[loser].length
-      const benchIds = bench.map(p => p.id)
-      const incomingIds = benchIds.slice(0, loserSize)
-      const remainingBenchIds = benchIds.slice(loserSize)
+      const incomingIds = benchIdsAll.slice(0, loserSize)
+      const remainingBenchIds = benchIdsAll.slice(loserSize)
       const outgoingLoserIds = teams[loser].map(p => p.id)
       const newBenchIds = [...remainingBenchIds, ...outgoingLoserIds]
       const incomingPlayers = players.filter(p => incomingIds.includes(p.id))
-      const newTeams = {
-        [winner]: teams[winner],
-        [loser]: incomingPlayers.length === loserSize ? incomingPlayers : teams[loser]
-      } as { black: Player[]; orange: Player[] }
+      let nextLoser = incomingPlayers.length === loserSize ? incomingPlayers : teams[loser]
+      let nextWinner = teams[winner]
+      const winnerUnchanged = JSON.stringify(nextWinner.map(p => p.id)) === JSON.stringify(currentBlackIds && winner === 'black' ? currentBlackIds : currentOrangeIds && winner === 'orange' ? currentOrangeIds : [])
+      let counters = { ...consecutiveUnchanged }
+      counters[winner] = winnerUnchanged ? (counters[winner] + 1) : 0
+      if (counters[winner] >= 3) {
+        if (newBenchIds.length > 0) {
+          const benchIncomingId = newBenchIds[0]
+          const benchIncoming = players.find(p => p.id === benchIncomingId)
+          if (benchIncoming) {
+            nextWinner = [benchIncoming, ...nextWinner.slice(1)]
+            const adjustedBench = newBenchIds.slice(1)
+            const pushedId = (teams[winner][0]?.id ?? null)
+            const finalBenchIds = pushedId ? [...adjustedBench, pushedId] : adjustedBench
+            setBench(players.filter(p => finalBenchIds.includes(p.id)))
+            localStorage.setItem('matchBench', JSON.stringify(finalBenchIds))
+          }
+        }
+        counters[winner] = 0
+      }
+      setConsecutiveUnchanged(counters)
+      localStorage.setItem('matchConsecutiveUnchanged', JSON.stringify(counters))
+      const newTeams = { black: winner === 'black' ? nextWinner : nextLoser, orange: winner === 'orange' ? nextWinner : nextLoser }
       setTeams(newTeams)
       const newBenchPlayers = players.filter(p => newBenchIds.includes(p.id))
       setBench(newBenchPlayers)
-      localStorage.setItem('matchTeams', JSON.stringify({
-        black: newTeams.black.map(p => p.id),
-        orange: newTeams.orange.map(p => p.id),
-      }))
+      localStorage.setItem('matchTeams', JSON.stringify({ black: newTeams.black.map(p => p.id), orange: newTeams.orange.map(p => p.id) }))
       localStorage.setItem('matchBench', JSON.stringify(newBenchIds))
     } catch { void 0 }
   }
@@ -1180,6 +1271,97 @@ const Matches: React.FC = () => {
         </div>
       )}
 
+      {tieModal.open && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Empate — Par ou Ímpar</h3>
+            <p className="text-sm text-gray-600 mb-4">Escolha par ou ímpar para decidir quem permanece.</p>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setTieModal({ open: true, choice: 'par' })}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${tieModal.choice === 'par' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-900'}`}
+              >
+                Par
+              </button>
+              <button
+                onClick={() => setTieModal({ open: true, choice: 'impar' })}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${tieModal.choice === 'impar' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-900'}`}
+              >
+                Ímpar
+              </button>
+            </div>
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setTieModal({ open: false, choice: null })}
+                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const choice = tieModal.choice
+                  if (!choice) {
+                    toast.error('Selecione par ou ímpar')
+                    return
+                  }
+                  const n = Math.floor(Math.random() * 100) + 1
+                  const result = (n % 2 === 0) ? 'par' : 'impar'
+                  const stay: 'black'|'orange' = result === choice ? 'black' : 'orange'
+                  const leave: 'black'|'orange' = stay === 'black' ? 'orange' : 'black'
+                  const needed = teams[leave].length
+                  const benchIds = bench.map(p => p.id)
+                  const incomingIds = benchIds.slice(0, needed)
+                  const remainingBenchIds = benchIds.slice(needed)
+                  const incomingPlayers = players.filter(p => incomingIds.includes(p.id))
+                  if (incomingPlayers.length !== needed) {
+                    setTieModal({ open: false, choice: null })
+                    toast.warning('Banco insuficiente para substituição')
+                    return
+                  }
+                  const newLeave = incomingPlayers
+                  const newTeams = { black: stay === 'black' ? teams.black : newLeave, orange: stay === 'orange' ? teams.orange : newLeave }
+                  const outgoingLeaveIds = (stay === 'black' ? teams.orange : teams.black).map(p => p.id)
+                  const newBenchIds = [...remainingBenchIds, ...outgoingLeaveIds]
+                  setTeams(newTeams)
+                  setBench(players.filter(p => newBenchIds.includes(p.id)))
+                  localStorage.setItem('matchTeams', JSON.stringify({ black: newTeams.black.map(p => p.id), orange: newTeams.orange.map(p => p.id) }))
+                  localStorage.setItem('matchBench', JSON.stringify(newBenchIds))
+                  setConsecutiveUnchanged(prev => {
+                    const next = { black: stay === 'black' ? prev.black + 1 : 0, orange: stay === 'orange' ? prev.orange + 1 : 0 }
+                    if (next.black >= 3 || next.orange >= 3) {
+                      const target: 'black'|'orange' = next.black >= 3 ? 'black' : 'orange'
+                      const bIds = newBenchIds
+                      if (bIds.length > 0) {
+                        const incomingId = bIds[0]
+                        const incoming = players.find(p => p.id === incomingId)
+                        if (incoming) {
+                          const repl = target === 'black' ? [incoming, ...newTeams.black.slice(1)] : [incoming, ...newTeams.orange.slice(1)]
+                          const finalTeams = target === 'black' ? { black: repl, orange: newTeams.orange } : { black: newTeams.black, orange: repl }
+                          const adjBench = bIds.slice(1)
+                          const pushId = (target === 'black' ? newTeams.black[0]?.id : newTeams.orange[0]?.id) ?? null
+                          const finalBenchIds2 = pushId ? [...adjBench, pushId] : adjBench
+                          setTeams(finalTeams)
+                          setBench(players.filter(p => finalBenchIds2.includes(p.id)))
+                          localStorage.setItem('matchTeams', JSON.stringify({ black: finalTeams.black.map(p => p.id), orange: finalTeams.orange.map(p => p.id) }))
+                          localStorage.setItem('matchBench', JSON.stringify(finalBenchIds2))
+                          next[target] = 0
+                        }
+                      }
+                    }
+                    localStorage.setItem('matchConsecutiveUnchanged', JSON.stringify(next))
+                    return next
+                  })
+                  setTieModal({ open: false, choice: null })
+                  toast.success(`Número ${n} — ${result.toUpperCase()}. ${stay === 'black' ? 'Preto' : 'Laranja'} permanece.`)
+                }}
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                Decidir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Match Form */}
       {showForm && (
         <div className="bg-white rounded-lg shadow p-6">

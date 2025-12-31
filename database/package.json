@@ -1,0 +1,32 @@
+{
+  "name": "futsal-domingo-database",
+  "version": "1.0.0",
+  "description": "Configuração do banco de dados PostgreSQL para Futsal D'Domingo",
+  "main": "database/setup.js",
+  "scripts": {
+    "db:setup": "node database/setup.js",
+    "db:test": "node database/test-connection.js",
+    "db:reset": "node -e \"require('./database/setup.js').setupDatabase()\"",
+    "db:seed": "psql -U postgres -d futsal_domingo -f database/test_data.sql",
+    "db:backup": "pg_dump -U postgres -d futsal_domingo > backup_$(date +%Y%m%d_%H%M%S).sql",
+    "db:restore": "echo 'Uso: npm run db:restore -- backup_arquivo.sql'",
+    "db:shell": "psql -U postgres -d futsal_domingo",
+    "db:schema": "psql -U postgres -d futsal_domingo -f database/schema.sql"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "futsal",
+    "database",
+    "postgresql",
+    "setup"
+  ],
+  "author": "Futsal D'Domingo",
+  "license": "MIT"
+}

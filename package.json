@@ -1,0 +1,31 @@
+{
+  "name": "futsal-nautico",
+  "version": "1.0.0",
+  "description": "Sistema de gerenciamento de partidas de futsal para domingos",
+  "main": "api/server.js",
+  "scripts": {
+    "dev": "nodemon --ignore logs api/server.js",
+    "start": "node api/server.js",
+    "db:setup": "node database/setup.js",
+    "db:connection": "node database/test-connection-local.js",
+    "build": "cd client && npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["futsal", "sports", "management"],
+  "author": "Futsal Náutico",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3",
+    "socket.io": "^4.7.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

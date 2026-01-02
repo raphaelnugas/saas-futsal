@@ -31,7 +31,8 @@ api.interceptors.response.use(
     return response
   },
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status
+    if (status === 401) {
       const url = error.config?.url || ''
       // Evitar queda de login automática em chamadas não relacionadas à autenticação
       // Somente redireciona se a verificação de sessão falhar explicitamente
@@ -40,11 +41,15 @@ api.interceptors.response.use(
         window.location.href = '/login'
       }
     }
-    logError('api_response_error', {
-      status: error.response?.status,
-      url: error.config?.url,
-      method: error.config?.method
-    })
+    if (status === 429) {
+      console.warn('[api:429]', { url: error.config?.url, method: error.config?.method })
+    } else {
+      logError('api_response_error', {
+        status,
+        url: error.config?.url,
+        method: error.config?.method
+      })
+    }
     return Promise.reject(error)
   }
 )

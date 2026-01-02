@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Plus, Edit, Trash2, User, Search } from 'lucide-react'
 import api from '../services/api'
@@ -12,6 +12,7 @@ interface Player {
   is_goalkeeper: boolean
   photo_url?: string
   photo_mime?: string
+  has_photo?: boolean
   created_at: string
   total_goals_scored: number
   total_matches_played: number
@@ -112,7 +113,10 @@ const Players: React.FC = () => {
   }
   
 
+  const didRunRef = useRef(false)
   useEffect(() => {
+    if (didRunRef.current) return
+    didRunRef.current = true
     fetchPlayers()
   }, [])
 
@@ -125,6 +129,7 @@ const Players: React.FC = () => {
         is_goalkeeper: !!p.is_goalkeeper,
         photo_url: p.photo_url,
         photo_mime: p.photo_mime,
+        has_photo: !!p.has_photo,
         created_at: p.created_at,
         total_goals_scored: Number(p.total_goals_scored || 0),
         total_matches_played: Number(p.total_games_played || 0),
@@ -135,9 +140,10 @@ const Players: React.FC = () => {
       try {
         const results = await Promise.all(list.map(async (pl: Player) => {
           if (pl.photo_url) return { id: pl.id, url: pl.photo_url }
+          if (!(pl.photo_mime || pl.has_photo)) return { id: pl.id, url: '' }
           try {
             const res = await api.get(`/api/players/${pl.id}/photo`, { responseType: 'arraybuffer' })
-            const ct = res.headers['content-type'] || 'image/jpeg'
+            const ct = res.headers['content-type'] || pl.photo_mime || 'image/jpeg'
             const bytes = new Uint8Array(res.data as ArrayBuffer)
             let bin = ''
             for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])

@@ -96,11 +96,22 @@ const Dashboard: React.FC = () => {
       try {
         const all = [...topSList, ...topAList, ...topGList]
         const unique = Array.from(new Map(all.map(p => [p.id, p])).values())
+        type PlayerMeta = { player_id: number; photo_url?: string; photo_mime?: string | null; has_photo?: boolean }
+        let metaById: Map<number, PlayerMeta> = new Map()
+        try {
+          const playersResp = await api.get('/api/players')
+          const plist = ((playersResp.data?.players || []) as PlayerMeta[]).filter(p => typeof p.player_id === 'number')
+          metaById = new Map(plist.map(p => [p.player_id, p]))
+        } catch { metaById = new Map() }
         const results = await Promise.all(unique.map(async (pl) => {
-          if (pl.photo_url) return { id: pl.id, url: pl.photo_url }
+          const meta = metaById.get(pl.id)
+          const directUrl = pl.photo_url || meta?.photo_url || ''
+          if (directUrl) return { id: pl.id, url: directUrl }
+          const canFetch = !!(meta?.photo_mime || meta?.has_photo)
+          if (!canFetch) return { id: pl.id, url: '' }
           try {
             const res = await api.get(`/api/players/${pl.id}/photo`, { responseType: 'arraybuffer' })
-            const ct = res.headers['content-type'] || 'image/jpeg'
+            const ct = res.headers['content-type'] || meta?.photo_mime || 'image/jpeg'
             const bytes = new Uint8Array(res.data as ArrayBuffer)
             let bin = ''
             for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
@@ -407,7 +418,7 @@ const Dashboard: React.FC = () => {
                         <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow ${medalClass(index)}`}>
                           <Award className="w-3 h-3" />
                         </div>
-                        <div className="text-xs text-center mt-1 text-gray-700">{p.count.toFixed ? p.count.toFixed(2) : p.count} média gols sofridos</div>
+                        <div className="text-xs text-center mt-1 text-gray-700">{p.count.toFixed ? p.count.toFixed(2) : p.count} média</div>
                       </div>
                     ))
                   ) : (

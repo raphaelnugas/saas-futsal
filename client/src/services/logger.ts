@@ -11,6 +11,10 @@ export function logError(message: string, context?: Record<string, unknown>) {
 }
 
 async function send(level: 'info'|'warn'|'error', message: string, context?: Record<string, unknown>) {
+  if (context && typeof context.status === 'number' && context.status === 429) {
+    console.warn(`[client:429] ${message}`, context)
+    return
+  }
   try {
     const base = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL || 'http://localhost:3001'
     await fetch(`${base}/api/logs`, {

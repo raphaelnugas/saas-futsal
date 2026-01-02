@@ -46,13 +46,21 @@ const Sundays: React.FC = () => {
         api.get('/api/sundays'),
         api.get('/api/players')
       ])
-      const sundaysList = (sundaysResponse.data?.sundays || []).map((s: any) => ({
-        id: s.sunday_id,
-        sunday_date: s.date,
-        status: 'scheduled',
-        total_players: Number(s.total_attendees || 0),
-        created_at: s.created_at
-      }))
+      const apiSundays = (sundaysResponse.data?.sundays || [])
+      const sundaysList = apiSundays.map((s: any, index: number) => {
+        const isMostRecent = index === 0
+        const hasMatches = Number(s.total_matches || 0) > 0
+        const status = isMostRecent
+          ? (hasMatches ? 'in_progress' : 'scheduled')
+          : 'completed'
+        return {
+          id: s.sunday_id,
+          sunday_date: s.date,
+          status,
+          total_players: Number(s.total_attendees || 0),
+          created_at: s.created_at
+        }
+      })
       const playersList = (playersResponse.data?.players || []).map((p: any) => ({
         id: p.player_id,
         name: p.name,
@@ -183,8 +191,8 @@ const Sundays: React.FC = () => {
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'scheduled': return 'Agendado'
-      case 'in_progress': return 'Em Andamento'
-      case 'completed': return 'Concluído'
+      case 'in_progress': return 'Em andamento'
+      case 'completed': return 'Encerrado'
       default: return status
     }
   }

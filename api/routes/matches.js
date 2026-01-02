@@ -9,6 +9,7 @@ const router = express.Router();
 router.use(authenticateToken);
 
 const sseClients = new Map();
+const tickerClients = new Set();
 function sseWrite(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -17,7 +18,7 @@ async function broadcastGoal(matchId, stat) {
   const list = sseClients.get(Number(matchId));
   if (!list || !list.size) return;
   const countsRes = await query(
-    `SELECT team_scored, COUNT(*) AS c FROM stats_log WHERE match_id = $1 GROUP BY team_scored`,
+    `SELECT team_scored, COUNT(*) AS c FROM stats_log WHERE match_id = $1 AND event_type = 'goal' GROUP BY team_scored`,
     [matchId]
   );
   let blackGoals = 0;
@@ -29,10 +30,82 @@ async function broadcastGoal(matchId, stat) {
   for (const res of list) {
     sseWrite(res, 'goal', { stat, blackGoals, orangeGoals });
   }
+  if (tickerClients.size) {
+    const startRes = await query(`SELECT start_time FROM matches WHERE match_id = $1`, [matchId]);
+    const start_time = startRes.rows[0]?.start_time || null;
+    for (const res of tickerClients) {
+      sseWrite(res, 'goal', { match_id: Number(matchId), start_time, blackGoals, orangeGoals });
+    }
+  }
 }
+async function broadcastTicker(matchId) {
+  if (!tickerClients.size) return;
+  if (!matchId) {
+    for (const res of tickerClients) {
+      sseWrite(res, 'inactive', { ts: Date.now() });
+    }
+    return;
+  }
+  const startRes = await query(`SELECT start_time, team_black_score, team_orange_score FROM matches WHERE match_id = $1`, [matchId]);
+  const row = startRes.rows[0] || {};
+  const countsRes = await query(
+    `SELECT team_scored, COUNT(*) AS c FROM stats_log WHERE match_id = $1 AND event_type = 'goal' GROUP BY team_scored`,
+    [matchId]
+  );
+  let blackGoals = 0;
+  let orangeGoals = 0;
+  for (const r of countsRes.rows) {
+    if (r.team_scored === 'black') blackGoals = Number(r.c || 0);
+    if (r.team_scored === 'orange') orangeGoals = Number(r.c || 0);
+  }
+  for (const res of tickerClients) {
+    sseWrite(res, 'init', { match_id: Number(matchId), start_time: row.start_time, blackGoals, orangeGoals });
+  }
+}
+async function broadcastFinish(matchId) {
+  const list = sseClients.get(Number(matchId));
+  if (!list || !list.size) return;
+  const finRes = await query(`SELECT team_black_score, team_orange_score, status FROM matches WHERE match_id = $1`, [matchId]);
+  const row = finRes.rows[0] || {};
+  for (const res of list) {
+    sseWrite(res, 'finish', { match_id: Number(matchId), status: row.status || 'finished', blackScore: Number(row.team_black_score || 0), orangeScore: Number(row.team_orange_score || 0) });
+  }
+}
+// Ticker stream DEVE vir antes de '/:id/stream' para não colidir com 'ticker'
+router.get('/ticker/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.write(`retry: 3000\n\n`);
+  tickerClients.add(res);
+  try {
+    const activeRes = await query(`SELECT match_id, start_time FROM matches WHERE status = 'in_progress' ORDER BY sunday_id DESC, match_number ASC LIMIT 1`);
+    if (activeRes.rows.length) {
+      const mid = activeRes.rows[0].match_id;
+      await broadcastTicker(mid);
+    } else {
+      sseWrite(res, 'inactive', { ts: Date.now() });
+    }
+  } catch (e) {
+    sseWrite(res, 'inactive', { ts: Date.now() });
+  }
+  const ping = setInterval(() => {
+    sseWrite(res, 'ping', { ts: Date.now() });
+  }, 15000);
+  req.on('close', () => {
+    clearInterval(ping);
+    tickerClients.delete(res);
+    res.end();
+  });
+});
 router.get('/:id/stream', async (req, res) => {
   try {
     const { id } = req.params;
+    if (!/^\d+$/.test(String(id))) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
     const matchRes = await query('SELECT match_id FROM matches WHERE match_id = $1', [id]);
     if (matchRes.rows.length === 0) {
       return res.status(404).json({ error: 'Partida não encontrada' });
@@ -50,15 +123,15 @@ router.get('/:id/stream', async (req, res) => {
     }
     list.add(res);
     const statsRes = await query(
-      `SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, created_at
+      `SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, COALESCE(event_type, 'goal') AS event_type, created_at
        FROM stats_log WHERE match_id = $1 ORDER BY stat_id ASC`,
       [id]
     );
     let blackGoals = 0;
     let orangeGoals = 0;
     for (const ev of statsRes.rows) {
-      if (ev.team_scored === 'black') blackGoals++;
-      if (ev.team_scored === 'orange') orangeGoals++;
+      if (ev.event_type === 'goal' && ev.team_scored === 'black') blackGoals++;
+      if (ev.event_type === 'goal' && ev.team_scored === 'orange') orangeGoals++;
     }
     sseWrite(res, 'init', { stats: statsRes.rows, blackGoals, orangeGoals });
     const ping = setInterval(() => {
@@ -347,6 +420,7 @@ router.post('/:id/teams', async (req, res) => {
       blackTeam,
       ruleApplied: match.team_orange_win_streak >= parseInt(process.env.WIN_STREAK_RULE)
     });
+    try { await broadcastTicker(id); } catch {}
 
   } catch (error) {
     console.error('Erro ao sortear times:', error);
@@ -486,6 +560,7 @@ router.post('/:id/participants', [
       black_team,
       orange_team
     });
+    try { await broadcastTicker(id); } catch {}
 
   } catch (error) {
     console.error('Erro ao definir participantes:', error);
@@ -499,7 +574,9 @@ router.post('/:id/participants', [
 // Finalizar partida e atualizar estatísticas
 router.post('/:id/finish', [
   body('orange_score').isInt({ min: 0 }).withMessage('Placar do time laranja deve ser um número inteiro positivo'),
-  body('black_score').isInt({ min: 0 }).withMessage('Placar do time preto deve ser um número inteiro positivo')
+  body('black_score').isInt({ min: 0 }).withMessage('Placar do time preto deve ser um número inteiro positivo'),
+  body('played_ids').optional().isArray().withMessage('Lista de jogadores deve ser um array'),
+  body('played_ids.*').optional().isInt({ min: 1 }).withMessage('IDs de jogadores devem ser inteiros válidos')
 ], async (req, res) => {
   try {
     // Validar entrada
@@ -512,7 +589,7 @@ router.post('/:id/finish', [
     }
 
     const { id } = req.params;
-    const { orange_score, black_score } = req.body;
+    const { orange_score, black_score, played_ids } = req.body;
 
     // Buscar partida
     const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
@@ -565,7 +642,7 @@ router.post('/:id/finish', [
     `, [orange_score, black_score, winner_team, orange_win_streak, black_win_streak, id]);
 
     // Atualizar estatísticas dos jogadores
-    await updatePlayerStats(id);
+    await updatePlayerStats(id, Array.isArray(played_ids) ? Array.from(new Set(played_ids.map(Number).filter(n => Number.isFinite(n) && n > 0))) : undefined);
 
     res.json({
       message: 'Partida finalizada com sucesso',
@@ -577,6 +654,8 @@ router.post('/:id/finish', [
         black_win_streak
       }
     });
+    try { await broadcastTicker(null); } catch {}
+    try { await broadcastFinish(id); } catch {}
 
   } catch (error) {
     console.error('Erro ao finalizar partida:', error);
@@ -626,8 +705,8 @@ router.post('/:id/stats-goal', [
     let inserted;
     await transaction(async (client) => {
       const ins = await client.query(`
-        INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+        VALUES ($1, $2, $3, $4, $5, $6, 'goal')
         RETURNING *
       `, [id, scorer_id || null, assist_id || null, team_scored, goal_minute || null, !!is_own_goal]);
       inserted = ins.rows[0];
@@ -673,12 +752,62 @@ router.post('/:id/stats-goal', [
   }
 });
 
+// Registrar substituição na partida
+router.post('/:id/stats-substitution', [
+  body('team').isIn(['orange', 'black']).withMessage('Time deve ser orange ou black'),
+  body('out_id').isInt({ min: 1 }).withMessage('ID do jogador que sai inválido'),
+  body('in_id').isInt({ min: 1 }).withMessage('ID do jogador que entra inválido'),
+  body('minute').optional().isInt({ min: 0, max: 120 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Erro de validação', details: errors.array() });
+    }
+    const { id } = req.params;
+    const { team, out_id, in_id, minute } = req.body;
+    const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
+    if (matchResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
+    const teamParticipantsRes = await query(`
+      SELECT player_id 
+      FROM match_participants 
+      WHERE match_id = $1 AND team = $2 AND player_id IS NOT NULL
+    `, [id, team]);
+    const teamIds = new Set(teamParticipantsRes.rows.map(r => r.player_id));
+    if (!teamIds.has(Number(out_id))) {
+      return res.status(400).json({ error: 'Jogador que sai não pertence ao time da partida' });
+    }
+    const playerExistsRes = await query(`SELECT player_id FROM players WHERE player_id = $1`, [in_id]);
+    if (playerExistsRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Jogador que entra não existe' });
+    }
+    let inserted;
+    await transaction(async (client) => {
+      const ins = await client.query(`
+        INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+        VALUES ($1, $2, $3, $4, $5, $6, 'substitution')
+        RETURNING *
+      `, [id, in_id, out_id, team, minute || null, false]);
+      inserted = ins.rows[0];
+    });
+    try {
+      await broadcastGoal(id, inserted);
+    } catch {}
+    res.status(201).json({ message: 'Substituição registrada', stat: inserted });
+  } catch (error) {
+    console.error('Erro ao registrar substituição:', error);
+    res.status(500).json({ error: 'Erro ao registrar substituição' });
+  }
+});
+
 // Remover registro de gol/assistência (admin)
 router.delete('/stats/:stat_id', requireAdmin, async (req, res) => {
   try {
     const { stat_id } = req.params;
     const existing = await query(`
-      SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, is_own_goal
+      SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, is_own_goal, COALESCE(event_type, 'goal') AS event_type
       FROM stats_log 
       WHERE stat_id = $1
     `, [stat_id]);
@@ -687,36 +816,38 @@ router.delete('/stats/:stat_id', requireAdmin, async (req, res) => {
     }
     const row = existing.rows[0];
     await transaction(async (client) => {
-      const concededTeam = row.team_scored === 'orange' ? 'black' : 'orange';
-      const partRes = await client.query(`
-        SELECT player_id 
-        FROM match_participants 
-        WHERE match_id = $1 AND team = $2 AND player_id IS NOT NULL
-      `, [row.match_id, concededTeam]);
-      const concededIds = partRes.rows.map(r => r.player_id);
-      if (concededIds.length) {
-        await client.query(`
-          UPDATE players
-          SET total_goals_conceded = GREATEST(total_goals_conceded - 1, 0),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE player_id = ANY($1)
-        `, [concededIds]);
-      }
-      if (!row.is_own_goal && row.player_scorer_id) {
-        await client.query(`
-          UPDATE players
-          SET total_goals_scored = GREATEST(total_goals_scored - 1, 0),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE player_id = $1
-        `, [row.player_scorer_id]);
-      }
-      if (row.player_assist_id) {
-        await client.query(`
-          UPDATE players
-          SET total_assists = GREATEST(total_assists - 1, 0),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE player_id = $1
-        `, [row.player_assist_id]);
+      if (row.event_type === 'goal') {
+        const concededTeam = row.team_scored === 'orange' ? 'black' : 'orange';
+        const partRes = await client.query(`
+          SELECT player_id 
+          FROM match_participants 
+          WHERE match_id = $1 AND team = $2 AND player_id IS NOT NULL
+        `, [row.match_id, concededTeam]);
+        const concededIds = partRes.rows.map(r => r.player_id);
+        if (concededIds.length) {
+          await client.query(`
+            UPDATE players
+            SET total_goals_conceded = GREATEST(total_goals_conceded - 1, 0),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE player_id = ANY($1)
+          `, [concededIds]);
+        }
+        if (!row.is_own_goal && row.player_scorer_id) {
+          await client.query(`
+            UPDATE players
+            SET total_goals_scored = GREATEST(total_goals_scored - 1, 0),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE player_id = $1
+          `, [row.player_scorer_id]);
+        }
+        if (row.player_assist_id) {
+          await client.query(`
+            UPDATE players
+            SET total_assists = GREATEST(total_assists - 1, 0),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE player_id = $1
+          `, [row.player_assist_id]);
+        }
       }
       await client.query('DELETE FROM stats_log WHERE stat_id = $1', [stat_id]);
     });
@@ -736,7 +867,7 @@ router.get('/:id/stats', async (req, res) => {
       return res.status(404).json({ error: 'Partida não encontrada' });
     }
     const stats = await query(`
-      SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, created_at
+      SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, COALESCE(event_type, 'goal') AS event_type, created_at
       FROM stats_log
       WHERE match_id = $1
       ORDER BY stat_id ASC
@@ -797,32 +928,26 @@ function sortTeams(players) {
 }
 
 // Função auxiliar para atualizar estatísticas dos jogadores
-async function updatePlayerStats(matchId) {
-  // Buscar participantes da partida
-  const participantsResult = await query(`
-    SELECT 
-      mp.player_id,
-      mp.team,
-      mp.is_goalkeeper,
-      m.team_orange_score,
-      m.team_black_score,
-      m.winner_team
-    FROM match_participants mp
-    JOIN matches m ON mp.match_id = m.match_id
-    WHERE mp.match_id = $1 AND mp.player_id IS NOT NULL
-  `, [matchId]);
-  
-  const participants = participantsResult.rows;
- 
-  // Atualizar estatísticas de cada jogador (apenas jogos; gols/assistências/sofridos já atualizados ao vivo)
-  for (const participant of participants) {
+async function updatePlayerStats(matchId, playedIds) {
+  let ids = Array.isArray(playedIds) ? playedIds.filter(n => Number.isFinite(n) && n > 0) : undefined;
+  if (!ids || ids.length === 0) {
+    const participantsResult = await query(`
+      SELECT 
+        mp.player_id
+      FROM match_participants mp
+      WHERE mp.match_id = $1 AND mp.player_id IS NOT NULL
+    `, [matchId]);
+    ids = Array.from(new Set(participantsResult.rows.map(r => Number(r.player_id))));
+  }
+  const uniqueIds = Array.from(new Set((ids || []).map(Number).filter(n => Number.isFinite(n) && n > 0)));
+  for (const pid of uniqueIds) {
     await query(`
       UPDATE players 
       SET 
         total_games_played = total_games_played + 1,
         updated_at = CURRENT_TIMESTAMP
       WHERE player_id = $1
-    `, [participant.player_id]);
+    `, [pid]);
   }
 }
 

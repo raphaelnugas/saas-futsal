@@ -19,6 +19,8 @@ router.get('/', async (req, res) => {
         player_id,
         name,
         photo_url,
+        photo_mime,
+        CASE WHEN photo_data IS NOT NULL THEN true ELSE false END AS has_photo,
         is_goalkeeper,
         attr_ofe,
         attr_def,

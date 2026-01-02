@@ -10,6 +10,8 @@ import {
   Menu,
   X
 } from 'lucide-react'
+import api from '../services/api'
+import type { AxiosInstance } from 'axios'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -24,6 +26,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [now, setNow] = React.useState<number>(Date.now())
   const lastStartRef = React.useRef<string | null>(null)
   const lastBeepAtRef = React.useRef<number>(0)
+  const sseRef = React.useRef<EventSource | null>(null)
+  const pollIntervalRef = React.useRef<number | null>(null)
   const [alarmMuted, setAlarmMuted] = React.useState<boolean>(() => {
     try {
       return localStorage.getItem('matchAlarmMuted') === '1'
@@ -78,41 +82,114 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [])
 
   React.useEffect(() => {
-    const read = () => {
-      try {
-        const raw = localStorage.getItem('matchTicker')
-        if (!raw) {
-          setTicker(null)
-          return null
-        }
-        const parsed = JSON.parse(raw) as { startTime: string; blackScore: number; orangeScore: number }
-        if (parsed && parsed.startTime) setTicker(parsed)
-        else setTicker(null)
-        if (parsed?.startTime && parsed.startTime !== lastStartRef.current) {
-          lastStartRef.current = parsed.startTime
-          lastBeepAtRef.current = 0
-        }
-        return parsed
-      } catch {
-        setTicker(null)
-        return null
+    try {
+      const base = ((api as AxiosInstance).defaults.baseURL) || ''
+      const token = localStorage.getItem('token') || ''
+      const es = new EventSource(`${base}/api/matches/ticker/stream?token=${encodeURIComponent(token)}`)
+      sseRef.current = es
+      const startPolling = async () => {
+        try {
+          const resp = await api.get('/api/matches?status=in_progress')
+          const list = (resp.data?.matches || []) as Array<{ match_id: number; start_time?: string }>
+          if (!list.length) {
+            setTicker(null)
+            return
+          }
+          const mid = list[0].match_id
+          let startTime = list[0].start_time || ''
+          if (!startTime) {
+            try {
+              const det = await api.get(`/api/matches/${mid}`)
+              startTime = det.data?.match?.start_time || ''
+            } catch { void 0 }
+          }
+          let black = 0
+          let orange = 0
+          try {
+            const statsResp = await api.get(`/api/matches/${mid}/stats`)
+            const stats = (statsResp.data?.stats || []) as Array<{ team_scored: 'black' | 'orange' }>
+            black = stats.filter(s => s.team_scored === 'black').length
+            orange = stats.filter(s => s.team_scored === 'orange').length
+          } catch { void 0 }
+          if (startTime) {
+            setTicker({ startTime, blackScore: black, orangeScore: orange })
+          } else {
+            setTicker(null)
+          }
+        } catch { void 0 }
       }
-    }
-    read()
+      es.onopen = () => {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+        }
+      }
+      es.onerror = () => {
+        if (!pollIntervalRef.current) {
+          pollIntervalRef.current = window.setInterval(() => {
+            startPolling()
+          }, 15000)
+        }
+      }
+      es.addEventListener('init', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as { start_time?: string; blackGoals?: number; orangeGoals?: number }
+          if (data?.start_time) {
+            setTicker({
+              startTime: data.start_time,
+              blackScore: Number(data.blackGoals || 0),
+              orangeScore: Number(data.orangeGoals || 0)
+            })
+            if (data.start_time !== lastStartRef.current) {
+              lastStartRef.current = data.start_time
+              lastBeepAtRef.current = 0
+            }
+          } else {
+            setTicker(null)
+          }
+        } catch { setTicker(null) }
+      })
+      es.addEventListener('goal', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as { start_time?: string; blackGoals?: number; orangeGoals?: number }
+          if (data?.start_time) {
+            setTicker({
+              startTime: data.start_time,
+              blackScore: Number(data.blackGoals || 0),
+              orangeScore: Number(data.orangeGoals || 0)
+            })
+          }
+        } catch { void 0 }
+      })
+      es.addEventListener('inactive', () => {
+        setTicker(null)
+        lastBeepAtRef.current = 0
+      })
+      return () => {
+        try { es.close() } catch { void 0 }
+        sseRef.current = null
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+        }
+      }
+    } catch { void 0 }
+  }, [])
+
+  React.useEffect(() => {
     const i = setInterval(() => {
       setNow(Date.now())
-      const current = read()
-      if (current?.startTime) {
-        const startMs = new Date(current.startTime).getTime()
+      const muted = (() => {
+        try {
+          return localStorage.getItem('matchAlarmMuted') === '1'
+        } catch {
+          return alarmMuted
+        }
+      })()
+      if (muted !== alarmMuted) setAlarmMuted(muted)
+      if (ticker?.startTime) {
+        const startMs = new Date(ticker.startTime).getTime()
         const seconds = Math.floor((Date.now() - startMs) / 1000)
-        const muted = (() => {
-          try {
-            return localStorage.getItem('matchAlarmMuted') === '1'
-          } catch {
-            return alarmMuted
-          }
-        })()
-        if (muted !== alarmMuted) setAlarmMuted(muted)
         if (seconds >= 600 && !muted) {
           const nowMs = Date.now()
           if (nowMs - lastBeepAtRef.current >= 1200) {
@@ -125,7 +202,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       }
     }, 1000)
     return () => clearInterval(i)
-  }, [playAlarm])
+  }, [ticker, alarmMuted, playAlarm])
 
   const elapsedLabel = React.useMemo(() => {
     if (!ticker) return ''

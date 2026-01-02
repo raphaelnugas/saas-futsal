@@ -34,9 +34,10 @@ app.use(cors({
 }));
 
 // Rate limiting
+const isProd = (process.env.NODE_ENV === 'production');
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: isProd ? (15 * 60 * 1000) : (60 * 60 * 1000),
+  max: isProd ? 100 : 1000,
   message: 'Muitas requisições deste IP, tente novamente mais tarde.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -44,9 +45,13 @@ const limiter = rateLimit({
 app.use((req, res, next) => {
   const p = req.path || '';
   if (/^\/api\/matches\/\d+\/stream$/.test(p)) return next();
+  if (p === '/api/matches/ticker/stream') return next();
+  if (/^\/api\/matches\/\d+\/stats$/.test(p)) return next();
+  if (p === '/api/matches' && (req.query?.status === 'in_progress')) return next();
   if (p.startsWith('/assets/')) return next();
   if (p.startsWith('/players/') && (p.endsWith('/photo') || p.endsWith('/photo2'))) return next();
   if (p.startsWith('/logs')) return next();
+  if (p.startsWith('/api/auth/login') || p.startsWith('/api/auth/verify') || p.startsWith('/api/auth/config')) return next();
   return limiter(req, res, next);
 });
 
@@ -174,6 +179,27 @@ app.listen(PORT, '0.0.0.0', () => {
         await query(`ALTER TABLE players ${adds.join(', ')}`);
       }
       logger.info('Verificação de colunas players concluída', { added: adds.length });
+
+      try {
+        const statsColsRes = await query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'stats_log'
+        `);
+        const sCols = statsColsRes.rows.map(r => r.column_name);
+        const sAdds = [];
+        if (!sCols.includes('event_type')) {
+          sAdds.push(`ADD COLUMN event_type VARCHAR(20) DEFAULT 'goal'`);
+        }
+        if (sAdds.length) {
+          await query(`ALTER TABLE stats_log ${sAdds.join(', ')}`);
+          logger.info('Coluna event_type adicionada em stats_log');
+        } else {
+          logger.info('Coluna event_type já existe em stats_log');
+        }
+      } catch (err) {
+        logger.error('Falha ao verificar/adicionar colunas em stats_log', { error: err.message });
+      }
 
       try {
         const cfg = await query(`SELECT config_id, master_password_hash FROM system_config ORDER BY config_id DESC LIMIT 1`);

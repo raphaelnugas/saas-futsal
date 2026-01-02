@@ -1,4 +1,4 @@
-# 🏆 Futsal D'Domingo - Sistema de Gerenciamento
+# 🏆 Saas de Pelada - Sistema de Gerenciamento
 
 Sistema web completo para gerenciamento de partidas de futsal aos domingos, com controle de jogadores, times, estatísticas e cronômetro em tempo real.
 

@@ -11,6 +11,10 @@ interface PlayerDetail {
   attr_tec: number
   attr_for: number
   attr_pot: number
+  total_games_played?: number
+  total_goals_scored?: number
+  total_assists?: number
+  total_goals_conceded?: number
 }
 
 interface Match {
@@ -65,6 +69,10 @@ const Admin: React.FC = () => {
         attr_tec: pl.attr_tec || 50,
         attr_for: pl.attr_for || 50,
         attr_pot: pl.attr_pot || 50,
+        total_games_played: pl.total_games_played || 0,
+        total_goals_scored: pl.total_goals_scored || 0,
+        total_assists: pl.total_assists || 0,
+        total_goals_conceded: pl.total_goals_conceded || 0,
       }))
       setPlayers(details)
     } catch {
@@ -85,6 +93,25 @@ const Admin: React.FC = () => {
       toast.success(`Atributos de ${p.name} atualizados`)
     } catch {
       toast.error(`Erro ao atualizar atributos de ${p.name}`)
+    }
+  }
+
+  const resetPlayerStats = async (p: PlayerDetail) => {
+    try {
+      await api.post(`/api/players/${p.player_id}/reset-stats`)
+      toast.success(`Estatísticas de ${p.name} zeradas`)
+      loadPlayers()
+    } catch {
+      toast.error(`Erro ao zerar estatísticas de ${p.name}`)
+    }
+  }
+  const resetPlayerConceded = async (p: PlayerDetail) => {
+    try {
+      await api.post(`/api/players/${p.player_id}/reset-stats`, { reset_conceded: true })
+      toast.success(`Gols sofridos de ${p.name} zerados`)
+      loadPlayers()
+    } catch {
+      toast.error(`Erro ao zerar gols sofridos de ${p.name}`)
     }
   }
 
@@ -163,12 +190,31 @@ const Admin: React.FC = () => {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 flex items-center justify-between">
+                <div className="text-xs text-gray-600">
+                  Jogos: {p.total_games_played} • Gols: {p.total_goals_scored} • Assist.: {p.total_assists} • Sofridos: {p.total_goals_conceded}
+                </div>
                 <button
                   onClick={() => savePlayerAttrs(p)}
                   className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm"
                 >
                   Salvar
+                </button>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={() => resetPlayerStats(p)}
+                  className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs"
+                  title="Zerar jogos, gols e assistências"
+                >
+                  Zerar estatísticas
+                </button>
+                <button
+                  onClick={() => resetPlayerConceded(p)}
+                  className="ml-2 px-3 py-1.5 rounded-md bg-red-600 text-white text-xs"
+                  title="Zerar gols sofridos"
+                >
+                  Zerar sofridos
                 </button>
               </div>
             </div>

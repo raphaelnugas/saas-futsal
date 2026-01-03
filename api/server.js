@@ -19,6 +19,9 @@ const logsRoutes = require('./routes/logs');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Reconhecer IP real por trás de proxy reverso (Nginx/Apache)
+app.set('trust proxy', 1);
+
 // Fallback para JWT_SECRET em ambientes de desenvolvimento
 if (!process.env.JWT_SECRET || typeof process.env.JWT_SECRET !== 'string' || !process.env.JWT_SECRET.trim()) {
   process.env.JWT_SECRET = 'nautico-dev-local-secret';

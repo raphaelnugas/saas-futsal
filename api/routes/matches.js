@@ -176,6 +176,13 @@ router.get('/', async (req, res) => {
         m.*,
         gs.date as sunday_date,
         (
+          SELECT team_scored
+          FROM stats_log sl
+          WHERE sl.match_id = m.match_id AND COALESCE(sl.event_type, 'goal') = 'tie_decider'
+          ORDER BY sl.stat_id DESC
+          LIMIT 1
+        ) AS tie_decider_winner,
+        (
           SELECT COUNT(*) 
           FROM match_participants mp 
           WHERE mp.match_id = m.match_id
@@ -209,7 +216,14 @@ router.get('/:id', async (req, res) => {
     const matchResult = await query(`
       SELECT 
         m.*,
-        gs.date as sunday_date
+        gs.date as sunday_date,
+        (
+          SELECT team_scored
+          FROM stats_log sl
+          WHERE sl.match_id = m.match_id AND COALESCE(sl.event_type, 'goal') = 'tie_decider'
+          ORDER BY sl.stat_id DESC
+          LIMIT 1
+        ) AS tie_decider_winner
       FROM matches m
       JOIN game_sundays gs ON m.sunday_id = gs.sunday_id
       WHERE m.match_id = $1
@@ -343,19 +357,26 @@ router.post('/:id/teams', async (req, res) => {
       });
     }
 
-    const match = matchResult.rows[0];
-    if (match.status !== 'scheduled') {
-      return res.status(400).json({ 
-        error: 'Partida não pode ser sorteada',
-        message: 'Apenas partidas agendadas podem ter times sorteados'
-      });
-    }
+  const match = matchResult.rows[0];
+  if (match.status !== 'scheduled') {
+    return res.status(400).json({ 
+      error: 'Partida não pode ser sorteada',
+      message: 'Apenas partidas agendadas podem ter times sorteados'
+    });
+  }
 
-    // Buscar jogadores presentes neste domingo
-    const playersResult = await query(`
-      SELECT 
-        p.player_id,
-        p.name,
+  const winStreakRule = parseInt(process.env.WIN_STREAK_RULE) || 3;
+  if ((Number(match.team_orange_win_streak || 0) >= winStreakRule) || (Number(match.team_black_win_streak || 0) >= winStreakRule)) {
+    await query(`UPDATE matches SET team_orange_win_streak = 0, team_black_win_streak = 0 WHERE match_id = $1`, [id]);
+    match.team_orange_win_streak = 0;
+    match.team_black_win_streak = 0;
+  }
+
+  // Buscar jogadores presentes neste domingo
+  const playersResult = await query(`
+    SELECT 
+      p.player_id,
+      p.name,
         p.photo_url,
         p.is_goalkeeper,
         p.total_games_played,
@@ -482,7 +503,8 @@ router.post('/:id/participants', [
   body('black_team').isArray({ min: 1 }).withMessage('Time preto deve conter pelo menos 1 jogador'),
   body('orange_team').isArray({ min: 1 }).withMessage('Time laranja deve conter pelo menos 1 jogador'),
   body('black_team.*').isInt({ min: 1 }).withMessage('IDs do time preto devem ser inteiros válidos'),
-  body('orange_team.*').isInt({ min: 1 }).withMessage('IDs do time laranja devem ser inteiros válidos')
+  body('orange_team.*').isInt({ min: 1 }).withMessage('IDs do time laranja devem ser inteiros válidos'),
+  body('prev_stay_team').optional().isIn(['black', 'orange']).withMessage('Time que permanece deve ser black ou orange')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -493,7 +515,7 @@ router.post('/:id/participants', [
       });
     }
     const { id } = req.params;
-    const { black_team, orange_team } = req.body;
+    const { black_team, orange_team, prev_stay_team } = req.body;
 
     const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
     if (matchResult.rows.length === 0) {
@@ -517,7 +539,7 @@ router.post('/:id/participants', [
       WHERE player_id = ANY($1)
     `, [allIds]);
 
-    const playersById = new Map(playersResult.rows.map(p => [p.player_id, p]));
+  const playersById = new Map(playersResult.rows.map(p => [p.player_id, p]));
 
     // Verificar se todos IDs existem
     for (const pid of allIds) {
@@ -529,6 +551,12 @@ router.post('/:id/participants', [
       }
     }
 
+    const winStreakRule = parseInt(process.env.WIN_STREAK_RULE) || 3;
+    const mres = await query('SELECT team_orange_win_streak, team_black_win_streak, status FROM matches WHERE match_id = $1', [id]);
+    const mrow = mres.rows[0] || {};
+    if ((Number(mrow.team_orange_win_streak || 0) >= winStreakRule) || (Number(mrow.team_black_win_streak || 0) >= winStreakRule)) {
+      await query(`UPDATE matches SET team_orange_win_streak = 0, team_black_win_streak = 0 WHERE match_id = $1`, [id]);
+    }
     await transaction(async (client) => {
       await client.query('DELETE FROM match_participants WHERE match_id = $1', [id]);
 
@@ -555,12 +583,75 @@ router.post('/:id/participants', [
       `, [id]);
     });
 
+    try {
+      const matchRow = matchResult.rows[0] || {};
+      const prevRes = await query(`
+        SELECT match_id, winner_team, team_black_win_streak, team_orange_win_streak
+        FROM matches
+        WHERE sunday_id = $1 AND match_number < $2 AND status = 'finished'
+        ORDER BY match_number DESC
+        LIMIT 1
+      `, [matchRow.sunday_id, matchRow.match_number]);
+      let nextBlackCounter = 0;
+      let nextOrangeCounter = 0;
+      if (prevRes.rows.length > 0) {
+        const prev = prevRes.rows[0];
+        const presRes = await query(`SELECT COUNT(*)::int AS c FROM attendances WHERE sunday_id = $1 AND is_present = true`, [matchRow.sunday_id]);
+        const presentCount = Number(presRes.rows[0]?.c || 0);
+        const blackPrevCounter = Number(prev.team_black_win_streak || 0);
+        const orangePrevCounter = Number(prev.team_orange_win_streak || 0);
+        const blackPrevDots = blackPrevCounter <= 0 ? 0 : (blackPrevCounter === 1 ? 2 : 3);
+        const orangePrevDots = orangePrevCounter <= 0 ? 0 : (orangePrevCounter === 1 ? 2 : 3);
+        let remainTeam = null;
+        let tieWinner = null;
+        try {
+          const tieRes = await query(`
+            SELECT team_scored
+            FROM stats_log
+            WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'tie_decider'
+            ORDER BY stat_id DESC
+            LIMIT 1
+          `, [prev.match_id]);
+          const tw = tieRes.rows[0]?.team_scored;
+          if (tw === 'black' || tw === 'orange') tieWinner = tw;
+        } catch {}
+        if (presentCount > 17) {
+          if (prev.winner_team === 'black' && blackPrevDots === 0) remainTeam = 'black';
+          else if (prev.winner_team === 'orange' && orangePrevDots === 0) remainTeam = 'orange';
+          else remainTeam = null;
+        } else {
+          if (blackPrevDots === 3 && orangePrevDots !== 3) remainTeam = 'orange';
+          else if (orangePrevDots === 3 && blackPrevDots !== 3) remainTeam = 'black';
+          else {
+            if (prev.winner_team === 'black' || prev.winner_team === 'orange') {
+              remainTeam = prev.winner_team;
+            } else if (prev.winner_team === 'draw') {
+              if (tieWinner === 'black' || tieWinner === 'orange') {
+                remainTeam = tieWinner;
+              } else if (prev_stay_team === 'black' || prev_stay_team === 'orange') {
+                remainTeam = prev_stay_team;
+              } else {
+                remainTeam = null;
+              }
+            } else {
+              remainTeam = null;
+            }
+          }
+        }
+        nextBlackCounter = remainTeam === 'black' ? Math.min(2, blackPrevCounter + 1) : 0;
+        nextOrangeCounter = remainTeam === 'orange' ? Math.min(2, orangePrevCounter + 1) : 0;
+      }
+      await query(`UPDATE matches SET team_black_win_streak = $1, team_orange_win_streak = $2 WHERE match_id = $3`, [nextBlackCounter, nextOrangeCounter, id]);
+      try { await broadcastTicker(id); } catch {}
+    } catch (e) {
+      console.error('Erro ao calcular contadores de permanência:', e);
+    }
+
     res.json({
       message: 'Participantes definidos com sucesso',
       black_team,
       orange_team
     });
-    try { await broadcastTicker(id); } catch {}
 
   } catch (error) {
     console.error('Erro ao definir participantes:', error);
@@ -608,23 +699,14 @@ router.post('/:id/finish', [
       });
     }
 
-    // Determinar vencedor e atualizar sequência de vitórias
+    // Determinar vencedor
     let winner_team;
-    let orange_win_streak = match.team_orange_win_streak;
-    let black_win_streak = 0;
-
     if (orange_score > black_score) {
       winner_team = 'orange';
-      orange_win_streak++;
-      black_win_streak = 0;
     } else if (black_score > orange_score) {
       winner_team = 'black';
-      orange_win_streak = 0;
-      black_win_streak = 1;
     } else {
       winner_team = 'draw';
-      orange_win_streak = 0;
-      black_win_streak = 0;
     }
 
     // Atualizar partida
@@ -634,12 +716,10 @@ router.post('/:id/finish', [
         team_orange_score = $1,
         team_black_score = $2,
         winner_team = $3,
-        team_orange_win_streak = $4,
-        team_black_win_streak = $5,
         status = 'finished',
         end_time = CURRENT_TIMESTAMP
-      WHERE match_id = $6
-    `, [orange_score, black_score, winner_team, orange_win_streak, black_win_streak, id]);
+      WHERE match_id = $4
+    `, [orange_score, black_score, winner_team, id]);
 
     // Atualizar estatísticas dos jogadores
     await updatePlayerStats(id, Array.isArray(played_ids) ? Array.from(new Set(played_ids.map(Number).filter(n => Number.isFinite(n) && n > 0))) : undefined);
@@ -650,8 +730,8 @@ router.post('/:id/finish', [
         winner: winner_team,
         orange_score,
         black_score,
-        orange_win_streak,
-        black_win_streak
+        orange_win_streak: 0,
+        black_win_streak: 0
       }
     });
     try { await broadcastTicker(null); } catch {}
@@ -803,7 +883,7 @@ router.post('/:id/stats-substitution', [
 });
 
 // Remover registro de gol/assistência (admin)
-router.delete('/stats/:stat_id', requireAdmin, async (req, res) => {
+router.delete('/stats/:stat_id', async (req, res) => {
   try {
     const { stat_id } = req.params;
     const existing = await query(`
@@ -876,6 +956,43 @@ router.get('/:id/stats', async (req, res) => {
   } catch (error) {
     console.error('Erro ao listar registros da partida:', error);
     res.status(500).json({ error: 'Erro ao listar registros' });
+  }
+});
+
+// Registrar vencedor do desempate (par/ímpar) para partidas empatadas
+router.post('/:id/tie-decider', [
+  body('winner').isIn(['orange', 'black']).withMessage('Vencedor deve ser orange ou black')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Erro de validação', details: errors.array() });
+    }
+    const { id } = req.params;
+    const { winner } = req.body;
+    const matchResult = await query('SELECT status, winner_team FROM matches WHERE match_id = $1', [id]);
+    if (matchResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
+    const row = matchResult.rows[0];
+    if (row.status !== 'finished') {
+      return res.status(400).json({ error: 'Partida não está finalizada' });
+    }
+    if (row.winner_team !== 'draw') {
+      // Permitir registrar apenas para partidas empatadas
+      return res.status(400).json({ error: 'Desempate só é aplicável em partidas empatadas' });
+    }
+    await transaction(async (client) => {
+      await client.query(`DELETE FROM stats_log WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'tie_decider'`, [id]);
+      await client.query(`
+        INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+        VALUES ($1, NULL, NULL, $2, NULL, FALSE, 'tie_decider')
+      `, [id, winner]);
+    });
+    res.status(201).json({ message: 'Vencedor do desempate registrado', winner });
+  } catch (error) {
+    console.error('Erro ao registrar vencedor do desempate:', error);
+    res.status(500).json({ error: 'Erro ao registrar vencedor do desempate' });
   }
 });
 

@@ -1,7 +1,7 @@
 const express = require('express');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const fs = require('fs');
 const path = require('path');
 
@@ -485,6 +485,60 @@ router.get('/attendance', async (req, res) => {
       error: 'Erro ao buscar estatísticas',
       message: 'Não foi possível recuperar as estatísticas de presenças'
     });
+  }
+});
+
+// Recalcular estatísticas agregadas dos jogadores (admin)
+router.post('/recalculate', requireAdmin, async (req, res) => {
+  try {
+    await query(`
+      UPDATE players p
+      SET
+        total_games_played = COALESCE((
+          SELECT COUNT(DISTINCT m.match_id)
+          FROM match_participants mp
+          JOIN matches m ON mp.match_id = m.match_id
+          WHERE mp.player_id = p.player_id AND m.status = 'finished'
+        ), 0),
+        total_goals_scored = COALESCE((
+          SELECT COUNT(*)
+          FROM stats_log s
+          WHERE s.player_scorer_id = p.player_id
+            AND COALESCE(s.event_type, 'goal') = 'goal'
+            AND EXISTS (
+              SELECT 1 FROM matches m WHERE m.match_id = s.match_id AND m.status = 'finished'
+            )
+        ), 0),
+        total_assists = COALESCE((
+          SELECT COUNT(*)
+          FROM stats_log s
+          WHERE s.player_assist_id = p.player_id
+            AND COALESCE(s.event_type, 'goal') = 'goal'
+            AND EXISTS (
+              SELECT 1 FROM matches m WHERE m.match_id = s.match_id AND m.status = 'finished'
+            )
+        ), 0),
+        total_goals_conceded = COALESCE((
+          SELECT SUM(CASE WHEN mp.team = 'orange' THEN m.team_black_score ELSE m.team_orange_score END)
+          FROM match_participants mp
+          JOIN matches m ON mp.match_id = m.match_id
+          WHERE mp.player_id = p.player_id AND m.status = 'finished'
+        ), 0),
+        updated_at = CURRENT_TIMESTAMP
+    `);
+    const confirm = await query(`
+      SELECT player_id, name, total_games_played, total_goals_scored, total_assists, total_goals_conceded
+      FROM players
+      ORDER BY name ASC
+    `);
+    res.json({
+      message: 'Estatísticas recalculadas com sucesso',
+      players: confirm.rows,
+      total: confirm.rows.length
+    });
+  } catch (error) {
+    logger.error('Falha ao recalcular estatísticas', { error: error.message, requestId: req.id });
+    res.status(500).json({ error: 'Erro ao recalcular estatísticas dos jogadores' });
   }
 });
 

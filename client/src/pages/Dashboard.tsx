@@ -143,7 +143,7 @@ const Dashboard: React.FC = () => {
     return 'bg-orange-500 text-orange-100'
   }
 
-  type ModalType = 'scorers' | 'assisters' | 'goalkeepers' | null
+  type ModalType = 'scorers' | 'assisters' | 'goalkeepers' | 'all' | null
   const [modalOpen, setModalOpen] = useState<ModalType>(null)
   const [category, setCategory] = useState<'all' | 'scorers' | 'assisters' | 'goalkeepers'>('all')
   const [sortKey, setSortKey] = useState<'goals'|'assists'|'conceded'|'games'|'wins'|'draws'|'losses'|'gpg'|'gps'>('goals')
@@ -254,7 +254,7 @@ const Dashboard: React.FC = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
+        <Link to="/players" className="block bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer">
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-primary-100 rounded-lg p-3">
               <Users className="h-6 w-6 text-primary-600" />
@@ -264,9 +264,9 @@ const Dashboard: React.FC = () => {
               <p className="text-2xl font-semibold text-gray-900">{stats?.total_players || 0}</p>
             </div>
           </div>
-        </div>
+        </Link>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <Link to="/matches" className="block bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer">
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-success-100 rounded-lg p-3">
               <Trophy className="h-6 w-6 text-success-600" />
@@ -276,9 +276,9 @@ const Dashboard: React.FC = () => {
               <p className="text-2xl font-semibold text-gray-900">{stats?.total_matches || 0}</p>
             </div>
           </div>
-        </div>
+        </Link>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <Link to="/sundays" className="block bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer">
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-warning-100 rounded-lg p-3">
               <Calendar className="h-6 w-6 text-warning-600" />
@@ -288,9 +288,9 @@ const Dashboard: React.FC = () => {
               <p className="text-2xl font-semibold text-gray-900">{stats?.total_sundays || 0}</p>
             </div>
           </div>
-        </div>
+        </Link>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer" onClick={() => openModal('all')}>
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-danger-100 rounded-lg p-3">
               <TrendingUp className="h-6 w-6 text-danger-600" />

@@ -141,13 +141,17 @@ const Sundays: React.FC = () => {
 
     try {
       const presentPlayers = attendance.filter(a => a.is_present)
-      const payload = attendance.map(a => ({
-        player_id: a.player_id,
-        is_present: a.is_present,
-        arrival_order: a.is_present
-          ? (presentPlayers.findIndex(p => p.player_id === a.player_id) + 1 || null)
-          : null
-      }))
+      const payload = attendance.map(a => {
+        const base: Record<string, unknown> = {
+          player_id: a.player_id,
+          is_present: a.is_present
+        }
+        if (a.is_present) {
+          const order = presentPlayers.findIndex(p => p.player_id === a.player_id) + 1
+          if (order > 0) base.arrival_order = order
+        }
+        return base
+      })
       await api.post(`/api/sundays/${selectedSunday.id}/attendances`, { attendance: payload })
       toast.success('Presenças atualizadas com sucesso!')
       setShowAttendance(false)

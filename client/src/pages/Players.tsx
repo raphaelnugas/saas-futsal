@@ -293,26 +293,32 @@ const Players: React.FC = () => {
       } catch (e) {
         setCardGoldUrl('')
       }
-      try {
-        const photoRes2 = await api.get(`/api/players/${playerId}/photo2?v=${Date.now()}`, { responseType: 'arraybuffer' })
-        const ct2 = (photoRes2.headers && (photoRes2.headers['content-type'] as string)) || res.data?.player?.photo2_mime || 'image/jpeg'
-        const bytes2 = new Uint8Array(photoRes2.data as ArrayBuffer)
-        let bin2 = ''
-        for (let i = 0; i < bytes2.length; i++) bin2 += String.fromCharCode(bytes2[i])
-        const base642 = btoa(bin2)
-        setDetailsPhotoUrl(`data:${ct2};base64,${base642}`)
-      } catch (e) {
+      const p = res.data?.player || {}
+      const hasPhoto2 = typeof p.photo2_mime === 'string' && p.photo2_mime.trim() !== ''
+      const hasPhoto1 = typeof p.photo_mime === 'string' && p.photo_mime.trim() !== ''
+      const directUrl = typeof p.photo_url === 'string' && p.photo_url.trim() !== '' ? p.photo_url : ''
+      if (hasPhoto2) {
+        try {
+          const photoRes2 = await api.get(`/api/players/${playerId}/photo2?v=${Date.now()}`, { responseType: 'arraybuffer' })
+          const ct2 = (photoRes2.headers && (photoRes2.headers['content-type'] as string)) || p.photo2_mime || 'image/jpeg'
+          const bytes2 = new Uint8Array(photoRes2.data as ArrayBuffer)
+          let bin2 = ''
+          for (let i = 0; i < bytes2.length; i++) bin2 += String.fromCharCode(bytes2[i])
+          const base642 = btoa(bin2)
+          setDetailsPhotoUrl(`data:${ct2};base64,${base642}`)
+        } catch {}
+      } else if (hasPhoto1) {
         try {
           const photoRes = await api.get(`/api/players/${playerId}/photo?v=${Date.now()}`, { responseType: 'arraybuffer' })
-          const ct = (photoRes.headers && (photoRes.headers['content-type'] as string)) || res.data?.player?.photo_mime || 'image/jpeg'
+          const ct = (photoRes.headers && (photoRes.headers['content-type'] as string)) || p.photo_mime || 'image/jpeg'
           const bytes = new Uint8Array(photoRes.data as ArrayBuffer)
           let bin = ''
           for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
           const base64 = btoa(bin)
           setDetailsPhotoUrl(`data:${ct};base64,${base64}`)
-        } catch (e2) {
-          logError('player_photo_load_error', { playerId })
-        }
+        } catch {}
+      } else if (directUrl) {
+        setDetailsPhotoUrl(directUrl)
       }
     } catch {
       toast.error('Erro ao carregar detalhes do jogador')

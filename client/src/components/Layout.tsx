@@ -85,7 +85,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     try {
       const base = ((api as AxiosInstance).defaults.baseURL) || ''
       const token = localStorage.getItem('token') || ''
-      const es = new EventSource(`${base}/api/matches/ticker/stream?token=${encodeURIComponent(token)}`)
+      const sseUrl = base.endsWith('/api')
+        ? `${base}/matches/ticker/stream?token=${encodeURIComponent(token)}`
+        : `${base}/api/matches/ticker/stream?token=${encodeURIComponent(token)}`
+      const es = new EventSource(sseUrl)
       sseRef.current = es
       const startPolling = async () => {
         try {

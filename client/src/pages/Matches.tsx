@@ -1128,11 +1128,14 @@ const Matches: React.FC = () => {
     try {
       const base = ((api as AxiosInstance).defaults.baseURL) || ''
       const token = localStorage.getItem('token') || ''
-      const es = new EventSource(`${base}/api/matches/${currentMatchId}/stream?token=${encodeURIComponent(token)}`)
+      const sseUrl = base.endsWith('/api')
+        ? `${base}/matches/${currentMatchId}/stream?token=${encodeURIComponent(token)}`
+        : `${base}/api/matches/${currentMatchId}/stream?token=${encodeURIComponent(token)}`
+      const es = new EventSource(sseUrl)
       sseRef.current = es
       es.onopen = () => {
         sseStatsRef.current.opens += 1
-        console.info('[sse:open]', { url: `${base}/api/matches/${currentMatchId}/stream`, tentativa: sseAttemptsRef.current, aberturas: sseStatsRef.current.opens })
+        console.info('[sse:open]', { url: sseUrl, tentativa: sseAttemptsRef.current, aberturas: sseStatsRef.current.opens })
         setConnectionStatus('online')
         sseAttemptsRef.current = 0
         if (pollIntervalRef.current) {

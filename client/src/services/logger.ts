@@ -16,7 +16,14 @@ async function send(level: 'info'|'warn'|'error', message: string, context?: Rec
     return
   }
   try {
-    const base = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL || 'http://localhost:3001'
+    const envBase = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL
+    let base = envBase && envBase.trim().length > 0 ? envBase : 'http://localhost:3001'
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname
+      if (host && host !== 'localhost' && host !== '127.0.0.1' && (!envBase || envBase.trim().length === 0)) {
+        base = ''
+      }
+    }
     await fetch(`${base}/api/logs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

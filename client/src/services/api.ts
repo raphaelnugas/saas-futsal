@@ -1,7 +1,22 @@
 import axios from 'axios'
 import { logError } from './logger'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const resolveBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    const trimmed = envUrl.trim().replace(/\/+$/, '')
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`
+  }
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      return '/api'
+    }
+  }
+  return 'http://localhost:3001/api'
+}
+
+const API_BASE_URL = resolveBaseUrl()
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -17,6 +32,9 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+    if (typeof config.url === 'string') {
+      config.url = config.url.replace(/^\/api(\/|$)/, '/')
     }
     return config
   },

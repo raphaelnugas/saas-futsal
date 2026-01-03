@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { query, transaction } = require('../config/database');
 const logger = require('../utils/logger');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const crypto = require('crypto');
 
 const router = express.Router();
@@ -578,7 +578,6 @@ router.delete('/:id', async (req, res) => {
       message: 'Jogador deletado com sucesso',
       player: result.rows[0]
     });
-
   } catch (error) {
     logger.error('Erro ao deletar jogador', { error: error.message, requestId: req.id });
     
@@ -592,6 +591,55 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ 
       error: 'Erro ao deletar jogador',
       message: 'Não foi possível deletar o jogador',
+      requestId: req.id
+    });
+  }
+});
+
+// Zerar estatísticas do jogador (admin)
+router.post('/:id/reset-stats', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const resetConceded = Boolean(req.body?.reset_conceded);
+    const existing = await query('SELECT player_id, name FROM players WHERE player_id = $1', [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'Jogador não encontrado',
+        message: `Jogador com ID ${id} não existe`,
+        requestId: req.id
+      });
+    }
+    const sql = resetConceded ? `
+      UPDATE players 
+      SET 
+        total_games_played = 0,
+        total_goals_scored = 0,
+        total_assists = 0,
+        total_goals_conceded = 0,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE player_id = $1
+      RETURNING player_id, name, total_games_played, total_goals_scored, total_assists, total_goals_conceded
+    ` : `
+      UPDATE players 
+      SET 
+        total_games_played = 0,
+        total_goals_scored = 0,
+        total_assists = 0,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE player_id = $1
+      RETURNING player_id, name, total_games_played, total_goals_scored, total_assists, total_goals_conceded
+    `;
+    const result = await query(sql, [id]);
+    logger.info('player_stats_reset', { player_id: id, by: req.user?.username || 'admin', reset_conceded: resetConceded, requestId: req.id });
+    res.json({ 
+      message: 'Estatísticas zeradas com sucesso',
+      player: result.rows[0]
+    });
+  } catch (error) {
+    logger.error('Erro ao zerar estatísticas do jogador', { error: error.message, requestId: req.id });
+    res.status(500).json({ 
+      error: 'Erro ao zerar estatísticas',
+      message: 'Não foi possível zerar as estatísticas do jogador',
       requestId: req.id
     });
   }

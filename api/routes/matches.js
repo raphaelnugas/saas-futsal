@@ -709,7 +709,7 @@ router.post('/:id/finish', [
       winner_team = 'draw';
     }
 
-    // Atualizar partida
+    // Atualizar partida com placar informado
     await query(`
       UPDATE matches 
       SET 
@@ -720,6 +720,37 @@ router.post('/:id/finish', [
         end_time = CURRENT_TIMESTAMP
       WHERE match_id = $4
     `, [orange_score, black_score, winner_team, id]);
+
+    // Correção: sincronizar placar com eventos registrados (se houver divergência)
+    try {
+      const countsRes = await query(
+        `SELECT team_scored, COUNT(*) AS c 
+         FROM stats_log 
+         WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'goal' 
+         GROUP BY team_scored`,
+        [id]
+      );
+      let blackGoals = 0;
+      let orangeGoals = 0;
+      for (const r of countsRes.rows) {
+        if (r.team_scored === 'black') blackGoals = Number(r.c || 0);
+        if (r.team_scored === 'orange') orangeGoals = Number(r.c || 0);
+      }
+      if (blackGoals !== Number(black_score) || orangeGoals !== Number(orange_score)) {
+        const w =
+          orangeGoals > blackGoals ? 'orange' :
+          blackGoals > orangeGoals ? 'black' : 'draw';
+        await query(`
+          UPDATE matches 
+          SET 
+            team_orange_score = $1,
+            team_black_score = $2,
+            winner_team = $3,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE match_id = $4
+        `, [orangeGoals, blackGoals, w, id]);
+      }
+    } catch {}
 
     // Atualizar estatísticas dos jogadores
     await updatePlayerStats(id, Array.isArray(played_ids) ? Array.from(new Set(played_ids.map(Number).filter(n => Number.isFinite(n) && n > 0))) : undefined);
@@ -790,6 +821,8 @@ router.post('/:id/stats-goal', [
         RETURNING *
       `, [id, scorer_id || null, assist_id || null, team_scored, goal_minute || null, !!is_own_goal]);
       inserted = ins.rows[0];
+      const scoreCol = team_scored === 'orange' ? 'team_orange_score' : 'team_black_score';
+      await client.query(`UPDATE matches SET ${scoreCol} = ${scoreCol} + 1, updated_at = CURRENT_TIMESTAMP WHERE match_id = $1`, [id]);
       if (!is_own_goal && scorer_id) {
         await client.query(`
           UPDATE players 
@@ -912,6 +945,8 @@ router.delete('/stats/:stat_id', async (req, res) => {
             WHERE player_id = ANY($1)
           `, [concededIds]);
         }
+        const scoreCol = row.team_scored === 'orange' ? 'team_orange_score' : 'team_black_score';
+        await client.query(`UPDATE matches SET ${scoreCol} = GREATEST(${scoreCol} - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE match_id = $1`, [row.match_id]);
         if (!row.is_own_goal && row.player_scorer_id) {
           await client.query(`
             UPDATE players
@@ -1122,11 +1157,88 @@ router.delete('/:id', async (req, res) => {
       message: 'Partida deletada com sucesso'
     });
   } catch (error) {
-    console.error('Erro ao deletar partida:', error);
-    res.status(500).json({
-      error: 'Erro ao deletar partida',
-      message: 'Não foi possível deletar a partida'
+    console.error('Erro ao finalizar partida:', error);
+    res.status(500).json({ 
+      error: 'Erro ao finalizar partida',
+      message: 'Não foi possível finalizar a partida'
     });
+  }
+});
+
+// Ajustar placar de partida (admin) - histórico
+router.post('/:id/adjust-score', requireAdmin, [
+  body('orange_score').isInt({ min: 0 }).withMessage('Placar do time laranja deve ser inteiro >= 0'),
+  body('black_score').isInt({ min: 0 }).withMessage('Placar do time preto deve ser inteiro >= 0')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Erro de validação', details: errors.array() });
+    }
+    const { id } = req.params;
+    const { orange_score, black_score } = req.body;
+    const matchRes = await query('SELECT match_id FROM matches WHERE match_id = $1', [id]);
+    if (matchRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
+    const winner =
+      Number(orange_score) > Number(black_score) ? 'orange' :
+      Number(black_score) > Number(orange_score) ? 'black' : 'draw';
+    await query(`
+      UPDATE matches
+      SET 
+        team_orange_score = $1,
+        team_black_score = $2,
+        winner_team = $3,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE match_id = $4
+    `, [Number(orange_score), Number(black_score), winner, id]);
+    try { await broadcastFinish(id); } catch {}
+    res.json({ message: 'Placar ajustado com sucesso', match_id: Number(id), orange_score: Number(orange_score), black_score: Number(black_score), winner });
+  } catch (error) {
+    console.error('Erro ao ajustar placar:', error);
+    res.status(500).json({ error: 'Erro ao ajustar placar' });
+  }
+});
+
+// Sincronizar placar com eventos de gols (admin) - correção
+router.post('/:id/sync-score', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const matchRes = await query('SELECT match_id FROM matches WHERE match_id = $1', [id]);
+    if (matchRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
+    const countsRes = await query(
+      `SELECT team_scored, COUNT(*) AS c 
+       FROM stats_log 
+       WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'goal' 
+       GROUP BY team_scored`,
+      [id]
+    );
+    let blackGoals = 0;
+    let orangeGoals = 0;
+    for (const r of countsRes.rows) {
+      if (r.team_scored === 'black') blackGoals = Number(r.c || 0);
+      if (r.team_scored === 'orange') orangeGoals = Number(r.c || 0);
+    }
+    const winner =
+      orangeGoals > blackGoals ? 'orange' :
+      blackGoals > orangeGoals ? 'black' : 'draw';
+    await query(`
+      UPDATE matches
+      SET 
+        team_orange_score = $1,
+        team_black_score = $2,
+        winner_team = $3,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE match_id = $4
+    `, [orangeGoals, blackGoals, winner, id]);
+    try { await broadcastFinish(id); } catch {}
+    res.json({ message: 'Placar sincronizado com eventos', match_id: Number(id), orange_score: orangeGoals, black_score: blackGoals, winner });
+  } catch (error) {
+    console.error('Erro ao sincronizar placar:', error);
+    res.status(500).json({ error: 'Erro ao sincronizar placar' });
   }
 });
 

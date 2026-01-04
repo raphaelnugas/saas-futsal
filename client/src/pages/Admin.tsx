@@ -26,6 +26,11 @@ interface Match {
   team_black_score: number | null
 }
 
+interface SundaySummary {
+  sunday_id: number
+  date: string
+}
+
 interface StatLog {
   stat_id: number
   match_id: number
@@ -39,20 +44,30 @@ interface StatLog {
 const Admin: React.FC = () => {
   const [players, setPlayers] = useState<PlayerDetail[]>([])
   const [matches, setMatches] = useState<Match[]>([])
+  const [sundays, setSundays] = useState<SundaySummary[]>([])
+  const [selectedSundayId, setSelectedSundayId] = useState<number | null>(null)
   const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null)
   const [stats, setStats] = useState<StatLog[]>([])
   const [goalForm, setGoalForm] = useState({ scorer_id: '', assist_id: '', team_scored: 'orange', goal_minute: '', is_own_goal: false })
+  const [scoreForm, setScoreForm] = useState<{ orange: string; black: string }>({ orange: '', black: '' })
 
   useEffect(() => {
     loadPlayers()
     loadMatches()
+    loadSundays()
   }, [])
 
   useEffect(() => {
     if (selectedMatchId) {
       loadMatchStats(selectedMatchId)
+      const m = matches.find(mm => mm.match_id === selectedMatchId)
+      setScoreForm({
+        orange: String(m?.team_orange_score ?? ''),
+        black: String(m?.team_black_score ?? '')
+      })
     } else {
       setStats([])
+      setScoreForm({ orange: '', black: '' })
     }
   }, [selectedMatchId])
 
@@ -124,6 +139,20 @@ const Admin: React.FC = () => {
     }
   }
 
+  const loadSundays = async () => {
+    try {
+      const resp = await api.get('/api/sundays')
+      const list = (resp.data?.sundays || []) as any[]
+      const mapped: SundaySummary[] = list.map(s => ({
+        sunday_id: s.sunday_id,
+        date: s.date,
+      }))
+      setSundays(mapped)
+    } catch {
+      toast.error('Erro ao carregar domingos')
+    }
+  }
+
   const loadMatchStats = async (matchId: number) => {
     try {
       const statsResp = await api.get(`/api/matches/${matchId}/stats`)
@@ -149,6 +178,50 @@ const Admin: React.FC = () => {
       loadMatchStats(selectedMatchId)
     } catch {
       toast.error('Erro ao registrar gol/assistência')
+    }
+  }
+
+  const adjustScoreManual = async () => {
+    if (!selectedMatchId) return
+    try {
+      const orange = Number(scoreForm.orange || 0)
+      const black = Number(scoreForm.black || 0)
+      await api.post(`/api/matches/${selectedMatchId}/adjust-score`, {
+        orange_score: orange,
+        black_score: black
+      })
+      toast.success('Placar ajustado')
+      loadMatches()
+      loadMatchStats(selectedMatchId)
+    } catch {
+      toast.error('Erro ao ajustar placar')
+    }
+  }
+
+  const syncScoreFromEvents = async () => {
+    if (!selectedMatchId) return
+    try {
+      await api.post(`/api/matches/${selectedMatchId}/sync-score`)
+      toast.success('Placar sincronizado com eventos')
+      loadMatches()
+      loadMatchStats(selectedMatchId)
+    } catch {
+      toast.error('Erro ao sincronizar placar')
+    }
+  }
+
+  const auditSunday = async () => {
+    if (!selectedSundayId) return
+    try {
+      const resp = await api.post('/api/stats/audit-sunday', { sunday_id: selectedSundayId })
+      const corrected = resp.data?.corrected ?? 0
+      toast.success(`Auditoria concluída. Partidas corrigidas: ${corrected}`)
+      loadMatches()
+      if (selectedMatchId) {
+        loadMatchStats(selectedMatchId)
+      }
+    } catch {
+      toast.error('Erro ao executar auditoria')
     }
   }
 
@@ -223,6 +296,34 @@ const Admin: React.FC = () => {
       </section>
 
       <section>
+        <h3 className="text-lg font-semibold mb-3">Auditoria de Domingos</h3>
+        <div className="bg-white rounded-lg shadow p-4 space-y-3">
+          <div>
+            <label className="block text-sm text-gray-700">Selecionar domingo</label>
+            <select
+              value={selectedSundayId || ''}
+              onChange={(e) => setSelectedSundayId(e.target.value ? Number(e.target.value) : null)}
+              className="mt-1 block w-full border-gray-300 rounded-md"
+            >
+              <option value="">Selecione</option>
+              {sundays.map(s => (
+                <option key={s.sunday_id} value={s.sunday_id}>
+                  {s.date} (ID {s.sunday_id})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={auditSunday}
+            disabled={!selectedSundayId}
+            className="px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm disabled:opacity-50"
+          >
+            Auditar domingo selecionado
+          </button>
+        </div>
+      </section>
+
+      <section>
         <h3 className="text-lg font-semibold mb-3">Editar Gols/Assistências por Partida</h3>
         <div className="bg-white rounded-lg shadow p-4">
           <div className="mb-3">
@@ -243,6 +344,44 @@ const Admin: React.FC = () => {
 
           {selectedMatchId && (
             <>
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                <div>
+                  <label className="block text-sm text-gray-700">Placar Laranja</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={scoreForm.orange}
+                    onChange={(e) => setScoreForm(prev => ({ ...prev, orange: e.target.value }))}
+                    className="mt-1 block w-full border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700">Placar Preto</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={scoreForm.black}
+                    onChange={(e) => setScoreForm(prev => ({ ...prev, black: e.target.value }))}
+                    className="mt-1 block w-full border-gray-300 rounded-md"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={adjustScoreManual}
+                    className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm"
+                  >
+                    Salvar placar
+                  </button>
+                  <button
+                    onClick={syncScoreFromEvents}
+                    className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-sm"
+                    title="Usar contagem de gols nos eventos"
+                  >
+                    Ajustar via eventos
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
                 <div>
                   <label className="block text-sm text-gray-700">Autor do gol (ID)</label>

@@ -488,6 +488,76 @@ router.get('/attendance', async (req, res) => {
   }
 });
 
+router.post('/audit-sunday', requireAdmin, async (req, res) => {
+  try {
+    const { sunday_id } = req.body;
+    if (!/^\d+$/.test(String(sunday_id))) {
+      return res.status(400).json({ error: 'ID do domingo inválido' });
+    }
+    const sundayRes = await query('SELECT sunday_id FROM game_sundays WHERE sunday_id = $1', [sunday_id]);
+    if (sundayRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Domingo não encontrado' });
+    }
+    const matchesRes = await query(`
+      SELECT match_id, team_orange_score, team_black_score, status
+      FROM matches
+      WHERE sunday_id = $1
+      ORDER BY match_number ASC
+    `, [sunday_id]);
+    if (matchesRes.rows.length === 0) {
+      return res.json({ audited: 0, corrected: 0, matches: [] });
+    }
+    const summary = [];
+    await transaction(async (client) => {
+      for (const m of matchesRes.rows) {
+        const countsRes = await client.query(`
+          SELECT team_scored, COUNT(*) AS c
+          FROM stats_log
+          WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'goal'
+          GROUP BY team_scored
+        `, [m.match_id]);
+        let orangeGoals = 0;
+        let blackGoals = 0;
+        for (const r of countsRes.rows) {
+          if (r.team_scored === 'orange') orangeGoals = Number(r.c || 0);
+          if (r.team_scored === 'black') blackGoals = Number(r.c || 0);
+        }
+        const beforeOrange = Number(m.team_orange_score || 0);
+        const beforeBlack = Number(m.team_black_score || 0);
+        const needsUpdate = (orangeGoals !== beforeOrange) || (blackGoals !== beforeBlack);
+        if (needsUpdate) {
+          const winner =
+            orangeGoals > blackGoals ? 'orange' :
+            blackGoals > orangeGoals ? 'black' : 'draw';
+          await client.query(`
+            UPDATE matches
+            SET
+              team_orange_score = $1,
+              team_black_score = $2,
+              winner_team = $3,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE match_id = $4
+          `, [orangeGoals, blackGoals, winner, m.match_id]);
+        }
+        summary.push({
+          match_id: m.match_id,
+          before: { orange: beforeOrange, black: beforeBlack },
+          after: { orange: orangeGoals, black: blackGoals },
+          corrected: needsUpdate
+        });
+      }
+    });
+    const corrected = summary.filter(s => s.corrected).length;
+    res.json({ audited: matchesRes.rows.length, corrected, matches: summary });
+  } catch (error) {
+    logger.error('Erro na auditoria de domingo', { error: error.message, requestId: req.id });
+    res.status(500).json({
+      error: 'Erro na auditoria',
+      message: 'Não foi possível executar a auditoria do domingo'
+    });
+  }
+});
+
 // Recalcular estatísticas agregadas dos jogadores (admin)
 router.post('/recalculate', requireAdmin, async (req, res) => {
   try {

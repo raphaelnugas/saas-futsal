@@ -498,6 +498,16 @@ router.post('/audit-sunday', requireAdmin, async (req, res) => {
     if (sundayRes.rows.length === 0) {
       return res.status(404).json({ error: 'Domingo não encontrado' });
     }
+    const statsColsRes = await query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'stats_log'
+    `);
+    const sCols = statsColsRes.rows.map(r => r.column_name);
+    const hasTeamScored = sCols.includes('team_scored');
+    const hasEventType = sCols.includes('event_type');
+    const hasPlayerId = sCols.includes('player_id');
+    const hasActionType = sCols.includes('action_type');
     const matchesRes = await query(`
       SELECT match_id, team_orange_score, team_black_score, status
       FROM matches
@@ -510,12 +520,25 @@ router.post('/audit-sunday', requireAdmin, async (req, res) => {
     const summary = [];
     await transaction(async (client) => {
       for (const m of matchesRes.rows) {
-        const countsRes = await client.query(`
-          SELECT team_scored, COUNT(*) AS c
-          FROM stats_log
-          WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'goal'
-          GROUP BY team_scored
-        `, [m.match_id]);
+        let countsRes;
+        if (hasTeamScored) {
+          countsRes = await client.query(`
+            SELECT team_scored, COUNT(*) AS c
+            FROM stats_log
+            WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'goal'
+            GROUP BY team_scored
+          `, [m.match_id]);
+        } else if (hasPlayerId && hasActionType) {
+          countsRes = await client.query(`
+            SELECT mp.team AS team_scored, COUNT(*) AS c
+            FROM stats_log sl
+            JOIN match_participants mp ON mp.match_id = sl.match_id AND mp.player_id = sl.player_id
+            WHERE sl.match_id = $1 AND sl.action_type = 'goal'
+            GROUP BY mp.team
+          `, [m.match_id]);
+        } else {
+          countsRes = { rows: [] };
+        }
         let orangeGoals = 0;
         let blackGoals = 0;
         for (const r of countsRes.rows) {

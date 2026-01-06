@@ -28,9 +28,14 @@ const Sundays: React.FC = () => {
   const parseSundayDate = (dateStr: string) => {
     const s = String(dateStr || '')
     if (!s) return new Date(NaN)
+    // Se vier apenas 'YYYY-MM-DD', interpretar em horário local
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s)
-    const normalized = isDateOnly ? `${s}T00:00:00` : s.replace(' ', 'T')
-    return new Date(normalized)
+    if (isDateOnly) return new Date(`${s}T00:00:00`)
+    // Se vier timestamp (com 'T' ou 'Z'), extrair apenas a parte da data e interpretar local
+    const match = s.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (match) return new Date(`${match[1]}T00:00:00`)
+    // Fallback
+    return new Date(s.replace(' ', 'T'))
   }
 
   const [sundays, setSundays] = useState<Sunday[]>([])
@@ -312,7 +317,7 @@ const Sundays: React.FC = () => {
                   id="sunday_date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`}
                   className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                   required
                 />

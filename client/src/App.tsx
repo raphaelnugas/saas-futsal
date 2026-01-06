@@ -9,6 +9,7 @@ import Matches from './pages/Matches'
 import Sundays from './pages/Sundays'
 import Layout from './components/Layout'
 import Admin from './pages/Admin'
+import Regras from './pages/Regras'
 
 function App() {
   return (
@@ -42,6 +43,13 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Sundays />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/regras" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Regras />
                 </Layout>
               </ProtectedRoute>
             } />

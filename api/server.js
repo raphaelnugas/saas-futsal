@@ -15,6 +15,7 @@ const matchesRoutes = require('./routes/matches');
 const sundaysRoutes = require('./routes/sundays');
 const statsRoutes = require('./routes/stats');
 const logsRoutes = require('./routes/logs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -113,6 +114,24 @@ app.get('/api/assets/card-gold', authenticateToken, async (req, res) => {
   } catch (error) {
     logger.error('Erro ao servir /api/assets/card-gold', { error: error.message, requestId: req.id });
     res.status(500).json({ error: 'Erro ao obter template da carta' });
+  }
+});
+
+let RULES_PDF_CACHE = { mime: 'application/pdf', data: null };
+app.get('/api/assets/rules', authenticateToken, async (req, res) => {
+  try {
+    if (!RULES_PDF_CACHE.data) {
+      const explicit = process.env.RULES_PDF_PATH;
+      const defaultPath = path.resolve(__dirname, '..', 'Pelada de Domingo no Náutico.pdf');
+      const filePath = explicit && explicit.trim() ? explicit.trim() : defaultPath;
+      const data = await fs.promises.readFile(filePath);
+      RULES_PDF_CACHE = { mime: 'application/pdf', data };
+    }
+    res.set('Content-Type', RULES_PDF_CACHE.mime || 'application/pdf');
+    res.send(RULES_PDF_CACHE.data);
+  } catch (error) {
+    logger.error('Erro ao servir /api/assets/rules', { error: error.message, requestId: req.id });
+    res.status(500).json({ error: 'Erro ao obter documento de regras' });
   }
 });
 

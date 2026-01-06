@@ -8,7 +8,8 @@ import {
   Trophy, 
   LogOut,
   Menu,
-  X
+  X,
+  BookOpen
 } from 'lucide-react'
 import api from '../services/api'
 import type { AxiosInstance } from 'axios'
@@ -41,6 +42,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Jogadores', href: '/players', icon: Users },
     { name: 'Partidas', href: '/matches', icon: Trophy },
     { name: 'Domingos', href: '/sundays', icon: Calendar },
+    { name: 'Regras', href: '/regras', icon: BookOpen },
   ]
 
   const handleLogout = () => {

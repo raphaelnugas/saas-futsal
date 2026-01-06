@@ -230,7 +230,7 @@ const Sundays: React.FC = () => {
               <div className="flex items-center">
                 <Calendar className="w-5 h-5 text-primary-600 mr-2" />
                 <h3 className="text-lg font-medium text-gray-900">
-                  {new Date(sunday.sunday_date).toLocaleDateString('pt-BR', {
+                  {new Date(sunday.sunday_date + 'T00:00:00').toLocaleDateString('pt-BR', {
                     weekday: 'long',
                     year: 'numeric',
                     month: 'long',
@@ -339,7 +339,7 @@ const Sundays: React.FC = () => {
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Gerenciar Presenças - {new Date(selectedSunday.sunday_date).toLocaleDateString('pt-BR')}
+                  Gerenciar Presenças - {new Date(selectedSunday.sunday_date + 'T00:00:00').toLocaleDateString('pt-BR')}
                 </h3>
                 <button
                   onClick={() => {
@@ -429,7 +429,7 @@ const Sundays: React.FC = () => {
             <p className="text-sm text-gray-700">
               Tem certeza que deseja apagar o domingo de{' '}
               <span className="font-semibold">
-                {new Date(confirmDeleteSunday.sunday_date).toLocaleDateString('pt-BR', {
+                {new Date(confirmDeleteSunday.sunday_date + 'T00:00:00').toLocaleDateString('pt-BR', {
                   weekday: 'long',
                   year: 'numeric',
                   month: 'long',

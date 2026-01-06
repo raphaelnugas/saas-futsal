@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { query, transaction } = require('../config/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -158,6 +158,51 @@ router.post('/', [
     res.status(500).json({ 
       error: 'Erro ao criar domingo',
       message: 'Não foi possível criar o domingo'
+    });
+  }
+});
+
+// Ajustar data de um domingo (admin)
+router.put('/:id/date', requireAdmin, [
+  body('date').isDate().withMessage('Data é obrigatória e deve ser válida')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        error: 'Erro de validação',
+        details: errors.array()
+      });
+    }
+    const { id } = req.params;
+    const { date } = req.body;
+
+    const sundayResult = await query('SELECT sunday_id FROM game_sundays WHERE sunday_id = $1', [id]);
+    if (sundayResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Domingo não encontrado',
+        message: `Domingo com ID ${id} não existe`
+      });
+    }
+
+    const conflict = await query('SELECT sunday_id FROM game_sundays WHERE date = $1 AND sunday_id <> $2', [date, id]);
+    if (conflict.rows.length > 0) {
+      return res.status(409).json({
+        error: 'Data já utilizada',
+        message: `Já existe um domingo cadastrado para a data ${date}`
+      });
+    }
+
+    const result = await query('UPDATE game_sundays SET date = $1 WHERE sunday_id = $2 RETURNING *', [date, id]);
+    res.json({
+      message: 'Data do domingo atualizada com sucesso',
+      sunday: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Erro ao ajustar data do domingo:', error);
+    res.status(500).json({
+      error: 'Erro ao ajustar data do domingo',
+      message: 'Não foi possível ajustar a data do domingo'
     });
   }
 });

@@ -51,6 +51,9 @@ const Admin: React.FC = () => {
   const [goalForm, setGoalForm] = useState({ scorer_id: '', assist_id: '', team_scored: 'orange', goal_minute: '', is_own_goal: false })
   const [scoreForm, setScoreForm] = useState<{ orange: string; black: string }>({ orange: '', black: '' })
   const [recalcLoading, setRecalcLoading] = useState(false)
+  const [adjustSundayId, setAdjustSundayId] = useState<number | null>(null)
+  const [adjustSundayDate, setAdjustSundayDate] = useState('')
+  const [adjustLoading, setAdjustLoading] = useState(false)
 
   useEffect(() => {
     loadPlayers()
@@ -247,6 +250,20 @@ const Admin: React.FC = () => {
       setRecalcLoading(false)
     }
   }
+  const adjustSunday = async () => {
+    if (!adjustSundayId || !adjustSundayDate) return
+    try {
+      setAdjustLoading(true)
+      await api.put(`/api/sundays/${adjustSundayId}/date`, { date: adjustSundayDate })
+      toast.success('Data do domingo atualizada')
+      setAdjustSundayDate('')
+      await loadSundays()
+    } catch {
+      toast.error('Erro ao atualizar data do domingo')
+    } finally {
+      setAdjustLoading(false)
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -262,6 +279,42 @@ const Admin: React.FC = () => {
           >
             {recalcLoading ? 'Recalculando…' : 'Recalcular estatísticas'}
           </button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+            <div>
+              <label className="block text-sm text-gray-700">Selecionar domingo</label>
+              <select
+                value={adjustSundayId || ''}
+                onChange={(e) => setAdjustSundayId(e.target.value ? Number(e.target.value) : null)}
+                className="mt-1 block w-full border-gray-300 rounded-md"
+              >
+                <option value="">Selecione</option>
+                {sundays.map(s => (
+                  <option key={s.sunday_id} value={s.sunday_id}>
+                    {s.date} (ID {s.sunday_id})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-700">Nova data</label>
+              <input
+                type="date"
+                value={adjustSundayDate}
+                onChange={(e) => setAdjustSundayDate(e.target.value)}
+                className="mt-1 block w-full border-gray-300 rounded-md"
+              />
+            </div>
+            <div className="flex">
+              <button
+                onClick={adjustSunday}
+                disabled={!adjustSundayId || !adjustSundayDate || adjustLoading}
+                className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm disabled:opacity-50"
+                title="Atualiza a data do domingo sem apagar partidas"
+              >
+                {adjustLoading ? 'Atualizando…' : 'Ajustar data do domingo'}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 

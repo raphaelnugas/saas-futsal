@@ -4,6 +4,7 @@ import { Plus, Play, RotateCcw, Trophy, Clock, Trash2 } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
 import type { AxiosInstance } from 'axios'
+import { useAuth } from '../contexts/AuthContext'
 
 interface Player {
   id: number
@@ -139,6 +140,9 @@ const Matches: React.FC = () => {
   const sseRef = useRef<EventSource | null>(null)
   const sseAttemptsRef = useRef<number>(0)
   const pollIntervalRef = useRef<number | null>(null)
+  const { isAdmin } = useAuth()
+  const [editBlackScore, setEditBlackScore] = useState<string>('')
+  const [editOrangeScore, setEditOrangeScore] = useState<string>('')
   const sseStatsRef = useRef<{ opens: number; errors: number; reconnects: number; pings: number; inits: number; goals: number; finishes: number; polls: number }>({
     opens: 0, errors: 0, reconnects: 0, pings: 0, inits: 0, goals: 0, finishes: 0, polls: 0
   })
@@ -972,6 +976,31 @@ const Matches: React.FC = () => {
     } catch {
       setDetailsModal(prev => ({ ...prev, loading: false }))
       toast.error('Falha ao carregar detalhes da partida')
+    }
+  }
+  useEffect(() => {
+    if (detailsModal.open) {
+      setEditBlackScore(String(detailsModal.black_score ?? ''))
+      setEditOrangeScore(String(detailsModal.orange_score ?? ''))
+    } else {
+      setEditBlackScore('')
+      setEditOrangeScore('')
+    }
+  }, [detailsModal.open, detailsModal.black_score, detailsModal.orange_score])
+  const saveEditedScore = async () => {
+    if (!detailsModal.matchId) return
+    try {
+      const orange = Math.max(0, Number(editOrangeScore || 0))
+      const black = Math.max(0, Number(editBlackScore || 0))
+      await api.post(`/api/matches/${detailsModal.matchId}/adjust-score`, {
+        orange_score: orange,
+        black_score: black
+      })
+      toast.success('Placar ajustado')
+      setDetailsModal(prev => ({ ...prev, black_score: black, orange_score: orange }))
+      await fetchData()
+    } catch {
+      toast.error('Erro ao ajustar placar')
     }
   }
 
@@ -2435,6 +2464,40 @@ const Matches: React.FC = () => {
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                {isAdmin && (
+                  <div className="bg-white rounded-lg p-4 border md:col-span-2">
+                    <div className="text-sm font-semibold text-gray-900 mb-2">Editar placar</div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-black text-white text-[10px] font-bold">PRETO</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={editBlackScore}
+                          onChange={(e) => setEditBlackScore(e.target.value)}
+                          className="w-24 px-2 py-1 border border-gray-300 rounded-md"
+                        />
+                      </div>
+                      <span className="text-sm text-gray-600">x</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          value={editOrangeScore}
+                          onChange={(e) => setEditOrangeScore(e.target.value)}
+                          className="w-24 px-2 py-1 border border-gray-300 rounded-md"
+                        />
+                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-orange-500 text-white text-[10px] font-bold">LARANJA</span>
+                      </div>
+                      <button
+                        onClick={saveEditedScore}
+                        className="ml-auto px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm"
+                      >
+                        Salvar placar
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="bg-gray-100 rounded-lg p-4">
                   <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                     <div className="w-3 h-3 bg-black rounded-full mr-2"></div>

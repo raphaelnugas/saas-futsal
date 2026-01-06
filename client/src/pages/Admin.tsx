@@ -50,6 +50,7 @@ const Admin: React.FC = () => {
   const [stats, setStats] = useState<StatLog[]>([])
   const [goalForm, setGoalForm] = useState({ scorer_id: '', assist_id: '', team_scored: 'orange', goal_minute: '', is_own_goal: false })
   const [scoreForm, setScoreForm] = useState<{ orange: string; black: string }>({ orange: '', black: '' })
+  const [recalcLoading, setRecalcLoading] = useState(false)
 
   useEffect(() => {
     loadPlayers()
@@ -234,10 +235,35 @@ const Admin: React.FC = () => {
       toast.error('Erro ao remover registro')
     }
   }
+  const recalculateStats = async () => {
+    try {
+      setRecalcLoading(true)
+      await api.post('/api/stats/recalculate')
+      toast.success('Estatísticas recalculadas com sucesso')
+      await loadPlayers()
+    } catch {
+      toast.error('Erro ao recalcular estatísticas')
+    } finally {
+      setRecalcLoading(false)
+    }
+  }
 
   return (
     <div className="space-y-8">
       <h2 className="text-2xl font-bold text-gray-900">Admin</h2>
+
+      <section>
+        <h3 className="text-lg font-semibold mb-3">Ferramentas</h3>
+        <div className="bg-white rounded-lg shadow p-4 space-y-3">
+          <button
+            onClick={recalculateStats}
+            disabled={recalcLoading}
+            className="px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm disabled:opacity-50"
+          >
+            {recalcLoading ? 'Recalculando…' : 'Recalcular estatísticas'}
+          </button>
+        </div>
+      </section>
 
       <section>
         <h3 className="text-lg font-semibold mb-3">Editar Atributos de Jogadores</h3>

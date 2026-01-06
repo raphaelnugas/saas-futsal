@@ -177,25 +177,84 @@ router.get('/players/detailed', async (req, res) => {
         p.name,
         p.photo_url,
         p.is_goalkeeper,
-        p.total_games_played,
+        (
+          SELECT 
+            COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+            + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+            + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+          FROM match_participants mp
+          JOIN matches m ON mp.match_id = m.match_id
+          WHERE mp.player_id = p.player_id AND m.status = 'finished'
+        ) AS total_games_played,
         p.total_goals_scored,
         p.total_assists,
         p.total_goals_conceded,
         ROUND(
           CASE 
-            WHEN p.total_games_played > 0 THEN (p.total_goals_scored::numeric / p.total_games_played)::numeric 
+            WHEN (
+              SELECT 
+                COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+              FROM match_participants mp
+              JOIN matches m ON mp.match_id = m.match_id
+              WHERE mp.player_id = p.player_id AND m.status = 'finished'
+            ) > 0 
+            THEN p.total_goals_scored::numeric / NULLIF((
+              SELECT 
+                COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+              FROM match_participants mp
+              JOIN matches m ON mp.match_id = m.match_id
+              WHERE mp.player_id = p.player_id AND m.status = 'finished'
+            ), 0)::numeric 
             ELSE 0::numeric 
           END, 2
         ) as goals_per_game,
         ROUND(
           CASE 
-            WHEN p.total_games_played > 0 THEN (p.total_assists::numeric / p.total_games_played)::numeric 
+            WHEN (
+              SELECT 
+                COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+              FROM match_participants mp
+              JOIN matches m ON mp.match_id = m.match_id
+              WHERE mp.player_id = p.player_id AND m.status = 'finished'
+            ) > 0 
+            THEN p.total_assists::numeric / NULLIF((
+              SELECT 
+                COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+              FROM match_participants mp
+              JOIN matches m ON mp.match_id = m.match_id
+              WHERE mp.player_id = p.player_id AND m.status = 'finished'
+            ), 0)::numeric 
             ELSE 0::numeric 
           END, 2
         ) as assists_per_game,
         ROUND(
           CASE 
-            WHEN p.total_games_played > 0 THEN (p.total_goals_conceded::numeric / p.total_games_played)::numeric 
+            WHEN (
+              SELECT 
+                COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+              FROM match_participants mp
+              JOIN matches m ON mp.match_id = m.match_id
+              WHERE mp.player_id = p.player_id AND m.status = 'finished'
+            ) > 0 
+            THEN p.total_goals_conceded::numeric / NULLIF((
+              SELECT 
+                COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+                + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+              FROM match_participants mp
+              JOIN matches m ON mp.match_id = m.match_id
+              WHERE mp.player_id = p.player_id AND m.status = 'finished'
+            ), 0)::numeric 
             ELSE 0::numeric 
           END, 2
         ) as goals_conceded_per_game,

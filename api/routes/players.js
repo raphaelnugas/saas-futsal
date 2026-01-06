@@ -28,7 +28,15 @@ router.get('/', async (req, res) => {
         attr_tec,
         attr_for,
         attr_pot,
-        total_games_played,
+        (
+          SELECT 
+            COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+            + COALESCE(SUM(CASE WHEN m.winner_team = 'draw' THEN 1 ELSE 0 END), 0)
+            + COALESCE(SUM(CASE WHEN m.winner_team != 'draw' AND m.winner_team != mp.team THEN 1 ELSE 0 END), 0)
+          FROM match_participants mp
+          JOIN matches m ON mp.match_id = m.match_id
+          WHERE mp.player_id = players.player_id AND m.status = 'finished'
+        ) AS total_games_played,
         total_goals_scored,
         total_assists,
         total_goals_conceded,
@@ -218,7 +226,7 @@ router.get('/:id', async (req, res) => {
         wins: Number(stats.wins || 0),
         draws: Number(stats.draws || 0),
         losses: Number(stats.losses || 0),
-        matches: Number(stats.matches_played || 0),
+        matches: Number(stats.wins || 0) + Number(stats.draws || 0) + Number(stats.losses || 0),
         sundays: Number(stats.sundays_played || 0)
       }
     });

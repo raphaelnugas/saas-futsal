@@ -154,6 +154,22 @@ const Matches: React.FC = () => {
   const [selectedChallengers, setSelectedChallengers] = useState<number[]>([])
   const [rotationApplied, setRotationApplied] = useState<'gk'|'full'|null>(null)
   const [currentSundayDate, setCurrentSundayDate] = useState<string | undefined>(undefined)
+  const dateOnly = (s: string | undefined): string | undefined => {
+    const t = String(s || '')
+    if (!t) return undefined
+    const m = t.match(/^(\d{4}-\d{2}-\d{2})/)
+    return m ? m[1] : undefined
+  }
+  const nextSundayDate = (): string => {
+    const now = new Date()
+    const d = now.getDay()
+    const delta = (7 - d) % 7
+    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + delta)
+    const y = target.getFullYear()
+    const m = `${target.getMonth() + 1}`.padStart(2, '0')
+    const dd = `${target.getDate()}`.padStart(2, '0')
+    return `${y}-${m}-${dd}`
+  }
 
   useEffect(() => {
     if (didRunFetchRef.current) return
@@ -258,10 +274,11 @@ const Matches: React.FC = () => {
       try {
         const sundaysApi = (sundaysResponse.data?.sundays || []) as Array<{ sunday_id: number; date?: string }>
         if (sundaysApi.length > 0) {
-          const latestSundayId = sundaysApi[0].sunday_id
-          const latestSundayDate = String((sundaysApi[0] as { date?: string }).date || '')
-          setCurrentSundayDate(latestSundayDate || undefined)
-          const attResp = await api.get(`/api/sundays/${latestSundayId}/attendances`)
+          const todaySunday = nextSundayDate()
+          const foundToday = sundaysApi.find(s => dateOnly(String(s.date || '')) === todaySunday)
+          const sundayId = foundToday ? foundToday.sunday_id : sundaysApi[0].sunday_id
+          setCurrentSundayDate(todaySunday)
+          const attResp = await api.get(`/api/sundays/${sundayId}/attendances`)
           const rows = Array.isArray(attResp.data?.attendances)
             ? attResp.data.attendances
             : Array.isArray(attResp.data)
@@ -504,8 +521,11 @@ const Matches: React.FC = () => {
   }
   const prefillNextMatch = async () => {
     try {
-      const targetDate = currentSundayDate
-      const finishedToday = matches.filter(m => m.status === 'finished' && (!!targetDate && m.match_date === targetDate))
+      const targetDate = dateOnly(currentSundayDate)
+      const finishedToday = matches.filter(m => {
+        const md = dateOnly(m.match_date)
+        return m.status === 'finished' && !!targetDate && md === targetDate
+      })
       if (!finishedToday.length) {
         toast.error('Nenhuma partida finalizada para rodízio')
         return
@@ -633,17 +653,17 @@ const Matches: React.FC = () => {
     try {
       const sundaysResp = await api.get('/api/sundays')
       const sundaysRaw = sundaysResp.data?.sundays || []
-      if (!sundaysRaw.length) {
-        toast.error('Nenhum domingo encontrado para criar a partida')
+      const todaySunday = nextSundayDate()
+      const byDate = (sundaysRaw as Array<{ sunday_id: number; date: string }>).find(s => dateOnly(String(s.date || '')) === todaySunday)
+      let latestSundayId = byDate?.sunday_id
+      if (!latestSundayId) {
+        const createResp = await api.post('/api/sundays', { date: todaySunday })
+        latestSundayId = createResp.data?.sunday?.sunday_id
+      }
+      if (!latestSundayId) {
+        toast.error('Falha ao localizar ou criar o domingo atual')
         return
       }
-      const sundaysComputed = (sundaysRaw as Array<{ sunday_id: number; date: string; created_at?: string; total_matches?: number }>).map((s, idx) => {
-        const tm = Number(s.total_matches || 0)
-        const status: 'scheduled' | 'in_progress' | 'completed' = idx === 0 ? (tm > 0 ? 'in_progress' : 'scheduled') : 'completed'
-        return { id: s.sunday_id, date: s.date, created_at: s.created_at, total_matches: tm, status }
-      })
-      const targetSunday = sundaysComputed.find(s => s.status === 'scheduled') || sundaysComputed.find(s => s.status === 'in_progress') || sundaysComputed[0]
-      const latestSundayId = targetSunday.id
       const matchesResp = await api.get(`/api/matches?sunday_id=${latestSundayId}`)
       const existingMatches = matchesResp.data?.matches || []
       const nextMatchNumber = (existingMatches.length || 0) + 1
@@ -2018,8 +2038,11 @@ const Matches: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900">Partidas</h1>
         {(() => {
           const anyInProgress = matchInProgress || matches.some(m => m.status === 'in_progress')
-          const targetDate = currentSundayDate
-          const hasFinishedToday = matches.some(m => m.status === 'finished' && (!!targetDate && m.match_date === targetDate))
+          const targetDate = dateOnly(currentSundayDate)
+          const hasFinishedToday = matches.some(m => {
+            const md = dateOnly(m.match_date)
+            return m.status === 'finished' && !!targetDate && md === targetDate
+          })
           if (anyInProgress) {
             return null
           }

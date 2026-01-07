@@ -135,6 +135,8 @@ app.get('/api/assets/rules', authenticateToken, async (req, res) => {
   }
 });
 
+// Endpoints de texto/HTML removidos para manter apenas a leitura do PDF original
+
 // Rota 404
 app.use('*', (req, res) => {
   logger.warn('Rota 404', { path: req.originalUrl, method: req.method, requestId: req.id });

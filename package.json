@@ -11,7 +11,11 @@
     "build": "cd client && npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["futsal", "sports", "management"],
+  "keywords": [
+    "futsal",
+    "sports",
+    "management"
+  ],
   "author": "Futsal Náutico",
   "license": "MIT",
   "dependencies": {
@@ -22,6 +26,7 @@
     "express-rate-limit": "^7.1.5",
     "express-validator": "^7.0.1",
     "jsonwebtoken": "^9.0.2",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.11.3",
     "socket.io": "^4.7.4"
   },

@@ -2,11 +2,31 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { query, transaction } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const fs = require('fs');
+const path = require('path');
 
 const router = express.Router();
 
 // Todas as rotas requerem autenticação
 router.use(authenticateToken);
+
+function resolveBackupDir() {
+  const envDir = (process.env.BACKUP_DIR || '').trim();
+  if (envDir) return path.resolve(envDir);
+  const candidates = [
+    path.resolve(__dirname, '..', '..'),
+    process.cwd(),
+    path.resolve(__dirname, '..')
+  ];
+  for (const root of candidates) {
+    try {
+      if (fs.existsSync(root)) {
+        return path.join(root, 'backups');
+      }
+    } catch {}
+  }
+  return path.join(process.cwd(), 'backups');
+}
 
 const sseClients = new Map();
 const tickerClients = new Set();
@@ -28,13 +48,13 @@ async function broadcastGoal(matchId, stat) {
     if (r.team_scored === 'orange') orangeGoals = Number(r.c || 0);
   }
   for (const res of list) {
-    sseWrite(res, 'goal', { stat, blackGoals, orangeGoals });
+    sseWrite(res, 'goal', { stat, blackGoals, orangeGoals, server_now: new Date().toISOString() });
   }
   if (tickerClients.size) {
     const startRes = await query(`SELECT start_time FROM matches WHERE match_id = $1`, [matchId]);
     const start_time = startRes.rows[0]?.start_time || null;
     for (const res of tickerClients) {
-      sseWrite(res, 'goal', { match_id: Number(matchId), start_time, blackGoals, orangeGoals });
+      sseWrite(res, 'goal', { match_id: Number(matchId), start_time, blackGoals, orangeGoals, server_now: new Date().toISOString() });
     }
   }
 }
@@ -59,7 +79,7 @@ async function broadcastTicker(matchId) {
     if (r.team_scored === 'orange') orangeGoals = Number(r.c || 0);
   }
   for (const res of tickerClients) {
-    sseWrite(res, 'init', { match_id: Number(matchId), start_time: row.start_time, blackGoals, orangeGoals });
+    sseWrite(res, 'init', { match_id: Number(matchId), start_time: row.start_time, blackGoals, orangeGoals, server_now: new Date().toISOString() });
   }
 }
 async function broadcastFinish(matchId) {
@@ -767,6 +787,28 @@ router.post('/:id/finish', [
     });
     try { await broadcastTicker(null); } catch {}
     try { await broadcastFinish(id); } catch {}
+    try {
+      const row = matchResult.rows[0] || {};
+      const sundayId = row.sunday_id;
+      const sundayRes = await query('SELECT * FROM game_sundays WHERE sunday_id = $1', [sundayId]);
+      const sunday = sundayRes.rows[0] || {};
+      const attendancesRes = await query('SELECT * FROM attendances WHERE sunday_id = $1 ORDER BY arrival_order ASC, player_id ASC', [sundayId]);
+      const matchesRes = await query('SELECT * FROM matches WHERE sunday_id = $1 ORDER BY match_number ASC', [sundayId]);
+      const matchIds = matchesRes.rows.map(r => r.match_id);
+      let participants = [];
+      let stats = [];
+      if (matchIds.length) {
+        const partsRes = await query('SELECT * FROM match_participants WHERE match_id = ANY($1) ORDER BY match_id ASC, team ASC, player_id ASC', [matchIds]);
+        const statsRes = await query('SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, COALESCE(event_type, \'goal\') AS event_type, created_at FROM stats_log WHERE match_id = ANY($1) ORDER BY match_id ASC, stat_id ASC', [matchIds]);
+        participants = partsRes.rows;
+        stats = statsRes.rows;
+      }
+      const backup = { sunday, attendances: attendancesRes.rows, matches: matchesRes.rows, participants, stats_log: stats };
+      const dir = resolveBackupDir();
+      const file = path.join(dir, `sunday_${sundayId}.json`);
+      await fs.promises.mkdir(dir, { recursive: true });
+      await fs.promises.writeFile(file, JSON.stringify(backup, null, 2), 'utf8');
+    } catch {}
 
   } catch (error) {
     console.error('Erro ao finalizar partida:', error);

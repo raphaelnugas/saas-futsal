@@ -54,6 +54,8 @@ const Admin: React.FC = () => {
   const [adjustSundayId, setAdjustSundayId] = useState<number | null>(null)
   const [adjustSundayDate, setAdjustSundayDate] = useState('')
   const [adjustLoading, setAdjustLoading] = useState(false)
+  const [restoreLoading, setRestoreLoading] = useState(false)
+  const [restoreFileName, setRestoreFileName] = useState<string>('')
 
   useEffect(() => {
     loadPlayers()
@@ -264,6 +266,48 @@ const Admin: React.FC = () => {
       setAdjustLoading(false)
     }
   }
+  const saveSundayBackup = async () => {
+    if (!selectedSundayId) return
+    try {
+      const resp = await api.post(`/api/sundays/${selectedSundayId}/backup/save`)
+      toast.success('Backup salvo na pasta raiz')
+    } catch {
+      toast.error('Erro ao salvar backup do domingo')
+    }
+  }
+  const downloadSundayBackup = async () => {
+    if (!selectedSundayId) return
+    try {
+      const resp = await api.get(`/api/sundays/${selectedSundayId}/backup`)
+      const backup = resp.data?.backup
+      if (!backup) throw new Error('Sem conteúdo')
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `sunday_${selectedSundayId}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Erro ao baixar backup do domingo')
+    }
+  }
+  const restoreBackupFromFile = async (file: File) => {
+    try {
+      setRestoreLoading(true)
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      await api.post('/api/sundays/backup/restore', { backup: parsed })
+      toast.success('Domingo restaurado com sucesso')
+      await loadSundays()
+      await loadMatches()
+    } catch {
+      toast.error('Erro ao restaurar backup')
+    } finally {
+      setRestoreLoading(false)
+      setRestoreFileName('')
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -313,6 +357,61 @@ const Admin: React.FC = () => {
               >
                 {adjustLoading ? 'Atualizando…' : 'Ajustar data do domingo'}
               </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end pt-3 border-t">
+            <div>
+              <label className="block text-sm text-gray-700">Selecionar domingo</label>
+              <select
+                value={selectedSundayId || ''}
+                onChange={(e) => setSelectedSundayId(e.target.value ? Number(e.target.value) : null)}
+                className="mt-1 block w-full border-gray-300 rounded-md"
+              >
+                <option value="">Selecione</option>
+                {sundays.map(s => (
+                  <option key={s.sunday_id} value={s.sunday_id}>
+                    {s.date} (ID {s.sunday_id})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={downloadSundayBackup}
+                disabled={!selectedSundayId}
+                className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-sm disabled:opacity-50"
+              >
+                Baixar backup JSON
+              </button>
+              <button
+                onClick={saveSundayBackup}
+                disabled={!selectedSundayId}
+                className="px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm disabled:opacity-50"
+              >
+                Salvar backup na raiz
+              </button>
+            </div>
+            <div className="flex items-end">
+              <div className="w-full">
+                <label className="block text-sm text-gray-700">Restaurar backup de arquivo (.json)</label>
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      setRestoreFileName(file?.name || '')
+                      if (file) restoreBackupFromFile(file)
+                    }}
+                    className="block w-full text-sm"
+                  />
+                  {restoreLoading ? (
+                    <span className="text-xs text-gray-600">Restaurando…</span>
+                  ) : (
+                    <span className="text-xs text-gray-600">{restoreFileName}</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

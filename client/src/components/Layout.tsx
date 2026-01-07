@@ -29,6 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const lastBeepAtRef = React.useRef<number>(0)
   const sseRef = React.useRef<EventSource | null>(null)
   const pollIntervalRef = React.useRef<number | null>(null)
+  const serverOffsetRef = React.useRef<number>(0)
   const [alarmMuted, setAlarmMuted] = React.useState<boolean>(() => {
     try {
       return localStorage.getItem('matchAlarmMuted') === '1'
@@ -138,13 +139,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       }
       es.addEventListener('init', (ev: MessageEvent) => {
         try {
-          const data = JSON.parse(ev.data) as { start_time?: string; blackGoals?: number; orangeGoals?: number }
+          const data = JSON.parse(ev.data) as { start_time?: string; blackGoals?: number; orangeGoals?: number; server_now?: string }
           if (data?.start_time) {
             setTicker({
               startTime: data.start_time,
               blackScore: Number(data.blackGoals || 0),
               orangeScore: Number(data.orangeGoals || 0)
             })
+            if (data.server_now) {
+              const srvMs = new Date(data.server_now).getTime()
+              const offset = srvMs - Date.now()
+              serverOffsetRef.current = Number.isFinite(offset) ? offset : 0
+            }
             if (data.start_time !== lastStartRef.current) {
               lastStartRef.current = data.start_time
               lastBeepAtRef.current = 0
@@ -156,13 +162,31 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       })
       es.addEventListener('goal', (ev: MessageEvent) => {
         try {
-          const data = JSON.parse(ev.data) as { start_time?: string; blackGoals?: number; orangeGoals?: number }
+          const data = JSON.parse(ev.data) as { start_time?: string; blackGoals?: number; orangeGoals?: number; server_now?: string }
           if (data?.start_time) {
             setTicker({
               startTime: data.start_time,
               blackScore: Number(data.blackGoals || 0),
               orangeScore: Number(data.orangeGoals || 0)
             })
+          }
+          if (data.server_now) {
+            const srvMs = new Date(data.server_now).getTime()
+            const offset = srvMs - Date.now()
+            if (Number.isFinite(offset)) {
+              serverOffsetRef.current = (serverOffsetRef.current * 0.8) + (offset * 0.2)
+            }
+          }
+        } catch { void 0 }
+      })
+      es.addEventListener('ping', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as { ts?: number }
+          if (typeof data.ts === 'number') {
+            const offset = data.ts - Date.now()
+            if (Number.isFinite(offset)) {
+              serverOffsetRef.current = (serverOffsetRef.current * 0.8) + (offset * 0.2)
+            }
           }
         } catch { void 0 }
       })
@@ -183,7 +207,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   React.useEffect(() => {
     const i = setInterval(() => {
-      setNow(Date.now())
+      setNow(Date.now() + serverOffsetRef.current)
       const muted = (() => {
         try {
           return localStorage.getItem('matchAlarmMuted') === '1'

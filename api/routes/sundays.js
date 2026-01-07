@@ -2,8 +2,28 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { query, transaction } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const fs = require('fs');
+const path = require('path');
 
 const router = express.Router();
+
+function resolveBackupDir() {
+  const envDir = (process.env.BACKUP_DIR || '').trim();
+  if (envDir) return path.resolve(envDir);
+  const candidates = [
+    path.resolve(__dirname, '..', '..'),
+    process.cwd(),
+    path.resolve(__dirname, '..')
+  ];
+  for (const root of candidates) {
+    try {
+      if (fs.existsSync(root)) {
+        return path.join(root, 'backups');
+      }
+    } catch {}
+  }
+  return path.join(process.cwd(), 'backups');
+}
 
 // Todas as rotas requerem autenticação
 router.use(authenticateToken);
@@ -148,9 +168,40 @@ router.post('/', [
       RETURNING *
     `, [date, masterPasswordHash]);
 
+    const created = result.rows[0];
+    try {
+      const prevRes = await query(`
+        SELECT sunday_id FROM game_sundays 
+        WHERE sunday_id <> $1 
+        ORDER BY date DESC, sunday_id DESC 
+        LIMIT 1
+      `, [created.sunday_id]);
+      if (prevRes.rows.length > 0) {
+        const prevId = prevRes.rows[0].sunday_id;
+        const sundayRes = await query('SELECT * FROM game_sundays WHERE sunday_id = $1', [prevId]);
+        const sunday = sundayRes.rows[0] || {};
+        const attendancesRes = await query('SELECT * FROM attendances WHERE sunday_id = $1 ORDER BY arrival_order ASC, player_id ASC', [prevId]);
+        const matchesRes = await query('SELECT * FROM matches WHERE sunday_id = $1 ORDER BY match_number ASC', [prevId]);
+        const matchIds = matchesRes.rows.map(r => r.match_id);
+        let participants = [];
+        let stats = [];
+        if (matchIds.length) {
+          const partsRes = await query('SELECT * FROM match_participants WHERE match_id = ANY($1) ORDER BY match_id ASC, team ASC, player_id ASC', [matchIds]);
+          const statsRes = await query('SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, COALESCE(event_type, \'goal\') AS event_type, created_at FROM stats_log WHERE match_id = ANY($1) ORDER BY match_id ASC, stat_id ASC', [matchIds]);
+          participants = partsRes.rows;
+          stats = statsRes.rows;
+        }
+        const backup = { sunday, attendances: attendancesRes.rows, matches: matchesRes.rows, participants, stats_log: stats };
+        const dir = resolveBackupDir();
+        const file = path.join(dir, `sunday_${prevId}.json`);
+        await fs.promises.mkdir(dir, { recursive: true });
+        await fs.promises.writeFile(file, JSON.stringify(backup, null, 2), 'utf8');
+      }
+    } catch {}
+
     res.status(201).json({
       message: 'Domingo criado com sucesso',
-      sunday: result.rows[0]
+      sunday: created
     });
 
   } catch (error) {
@@ -552,6 +603,205 @@ router.delete('/:id', async (req, res) => {
       error: 'Erro ao deletar domingo',
       message: 'Não foi possível deletar o domingo'
     });
+  }
+});
+
+router.get('/:id/backup', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sundayRes = await query('SELECT * FROM game_sundays WHERE sunday_id = $1', [id]);
+    if (sundayRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Domingo não encontrado' });
+    }
+    const sunday = sundayRes.rows[0];
+    const attendancesRes = await query('SELECT * FROM attendances WHERE sunday_id = $1 ORDER BY arrival_order ASC, player_id ASC', [id]);
+    const matchesRes = await query('SELECT * FROM matches WHERE sunday_id = $1 ORDER BY match_number ASC', [id]);
+    const matchIds = matchesRes.rows.map(r => r.match_id);
+    let participants = [];
+    let stats = [];
+    if (matchIds.length) {
+      const partsRes = await query('SELECT * FROM match_participants WHERE match_id = ANY($1) ORDER BY match_id ASC, team ASC, player_id ASC', [matchIds]);
+      const statsRes = await query('SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, COALESCE(event_type, \'goal\') AS event_type, created_at FROM stats_log WHERE match_id = ANY($1) ORDER BY match_id ASC, stat_id ASC', [matchIds]);
+      participants = partsRes.rows;
+      stats = statsRes.rows;
+    }
+    const backup = { sunday, attendances: attendancesRes.rows, matches: matchesRes.rows, participants, stats_log: stats };
+    res.json({ backup });
+  } catch (error) {
+    console.error('Erro ao gerar backup do domingo:', error);
+    res.status(500).json({ error: 'Erro ao gerar backup do domingo' });
+  }
+});
+
+router.post('/:id/backup/save', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sundayRes = await query('SELECT * FROM game_sundays WHERE sunday_id = $1', [id]);
+    if (sundayRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Domingo não encontrado' });
+    }
+    const sunday = sundayRes.rows[0];
+    const attendancesRes = await query('SELECT * FROM attendances WHERE sunday_id = $1 ORDER BY arrival_order ASC, player_id ASC', [id]);
+    const matchesRes = await query('SELECT * FROM matches WHERE sunday_id = $1 ORDER BY match_number ASC', [id]);
+    const matchIds = matchesRes.rows.map(r => r.match_id);
+    let participants = [];
+    let stats = [];
+    if (matchIds.length) {
+      const partsRes = await query('SELECT * FROM match_participants WHERE match_id = ANY($1) ORDER BY match_id ASC, team ASC, player_id ASC', [matchIds]);
+      const statsRes = await query('SELECT stat_id, match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, COALESCE(event_type, \'goal\') AS event_type, created_at FROM stats_log WHERE match_id = ANY($1) ORDER BY match_id ASC, stat_id ASC', [matchIds]);
+      participants = partsRes.rows;
+      stats = statsRes.rows;
+    }
+    const backup = { sunday, attendances: attendancesRes.rows, matches: matchesRes.rows, participants, stats_log: stats };
+    const dir = resolveBackupDir();
+    const file = path.join(dir, `sunday_${id}.json`);
+    await fs.promises.mkdir(dir, { recursive: true });
+    const content = JSON.stringify(backup, null, 2);
+    await fs.promises.writeFile(file, content, 'utf8');
+    res.json({ message: 'Backup salvo com sucesso', file, bytes: Buffer.byteLength(content, 'utf8') });
+  } catch (error) {
+    console.error('Erro ao salvar backup do domingo:', error);
+    res.status(500).json({ error: 'Erro ao salvar backup do domingo' });
+  }
+});
+
+router.post('/backup/restore', requireAdmin, async (req, res) => {
+  try {
+    const payload = req.body && req.body.backup ? req.body.backup : req.body;
+    if (!payload || !payload.sunday || !Array.isArray(payload.matches) || !Array.isArray(payload.participants) || !Array.isArray(payload.stats_log)) {
+      return res.status(400).json({ error: 'Backup inválido' });
+    }
+    const sundayDate = payload.sunday.date;
+    if (!sundayDate) {
+      return res.status(400).json({ error: 'Data do domingo ausente no backup' });
+    }
+    const playersInBackup = new Set([
+      ...payload.participants.map(p => Number(p.player_id)).filter(n => Number.isFinite(n) && n > 0),
+      ...payload.stats_log.map(s => Number(s.player_scorer_id)).filter(n => Number.isFinite(n) && n > 0),
+      ...payload.stats_log.map(s => Number(s.player_assist_id)).filter(n => Number.isFinite(n) && n > 0),
+    ]);
+    if (playersInBackup.size) {
+      const playersRes = await query('SELECT player_id FROM players WHERE player_id = ANY($1)', [Array.from(playersInBackup)]);
+      const valid = new Set(playersRes.rows.map(r => Number(r.player_id)));
+      for (const pid of playersInBackup) {
+        if (!valid.has(pid)) {
+          return res.status(400).json({ error: `Jogador ${pid} não existe para restaurar` });
+        }
+      }
+    }
+    const result = await transaction(async (client) => {
+      const existing = await client.query('SELECT sunday_id FROM game_sundays WHERE date = $1', [sundayDate]);
+      let sundayId;
+      if (existing.rows.length > 0) {
+        sundayId = existing.rows[0].sunday_id;
+        const matchesRes = await client.query('SELECT match_id FROM matches WHERE sunday_id = $1', [sundayId]);
+        const matchIds = matchesRes.rows.map(r => r.match_id);
+        if (matchIds.length) {
+          await client.query('DELETE FROM stats_log WHERE match_id = ANY($1)', [matchIds]);
+          await client.query('DELETE FROM match_participants WHERE match_id = ANY($1)', [matchIds]);
+          await client.query('DELETE FROM matches WHERE match_id = ANY($1)', [matchIds]);
+        }
+        await client.query('DELETE FROM attendances WHERE sunday_id = $1', [sundayId]);
+        const pw = payload.sunday.master_password_hash || null;
+        await client.query('UPDATE game_sundays SET master_password_hash = $1 WHERE sunday_id = $2', [pw, sundayId]);
+      } else {
+        const pw = payload.sunday.master_password_hash || null;
+        const ins = await client.query('INSERT INTO game_sundays (date, master_password_hash) VALUES ($1, $2) RETURNING sunday_id', [sundayDate, pw]);
+        sundayId = ins.rows[0].sunday_id;
+      }
+      if (Array.isArray(payload.attendances)) {
+        for (const a of payload.attendances) {
+          await client.query(
+            `INSERT INTO attendances (sunday_id, player_id, is_present, arrival_order)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (sunday_id, player_id)
+             DO UPDATE SET is_present = EXCLUDED.is_present, arrival_order = EXCLUDED.arrival_order, created_at = CURRENT_TIMESTAMP`,
+            [sundayId, a.player_id, !!a.is_present, a.arrival_order || null]
+          );
+        }
+      }
+      const idMap = new Map();
+      for (const m of payload.matches) {
+        const ins = await client.query(
+          `INSERT INTO matches (
+             sunday_id, match_number, team_orange_win_streak, team_black_win_streak,
+             status, start_time, end_time, team_orange_score, team_black_score, winner_team
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 0), COALESCE($9, 0), $10)
+           RETURNING match_id`,
+          [
+            sundayId,
+            m.match_number,
+            m.team_orange_win_streak || 0,
+            m.team_black_win_streak || 0,
+            m.status || 'finished',
+            m.start_time || null,
+            m.end_time || null,
+            m.team_orange_score,
+            m.team_black_score,
+            m.winner_team || null
+          ]
+        );
+        idMap.set(Number(m.match_id), ins.rows[0].match_id);
+      }
+      for (const p of payload.participants) {
+        const newMid = idMap.get(Number(p.match_id));
+        if (!newMid) continue;
+        await client.query(
+          `INSERT INTO match_participants (match_id, player_id, team, is_goalkeeper)
+           VALUES ($1, $2, $3, $4)`,
+          [newMid, p.player_id || null, p.team, !!p.is_goalkeeper]
+        );
+      }
+      for (const s of payload.stats_log) {
+        const newMid = idMap.get(Number(s.match_id));
+        if (!newMid) continue;
+        await client.query(
+          `INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [newMid, s.player_scorer_id || null, s.player_assist_id || null, s.team_scored, s.goal_minute || null, !!s.is_own_goal, s.event_type || 'goal']
+        );
+      }
+      await client.query(`
+        UPDATE players p
+        SET
+          total_games_played = COALESCE((
+            SELECT COUNT(DISTINCT m.match_id)
+            FROM match_participants mp
+            JOIN matches m ON mp.match_id = m.match_id
+            WHERE mp.player_id = p.player_id AND m.status = 'finished'
+          ), 0),
+          total_goals_scored = COALESCE((
+            SELECT COUNT(*)
+            FROM stats_log s
+            WHERE s.player_scorer_id = p.player_id
+              AND COALESCE(s.event_type, 'goal') = 'goal'
+              AND EXISTS (
+                SELECT 1 FROM matches m WHERE m.match_id = s.match_id AND m.status = 'finished'
+              )
+          ), 0),
+          total_assists = COALESCE((
+            SELECT COUNT(*)
+            FROM stats_log s
+            WHERE s.player_assist_id = p.player_id
+              AND COALESCE(s.event_type, 'goal') = 'goal'
+              AND EXISTS (
+                SELECT 1 FROM matches m WHERE m.match_id = s.match_id AND m.status = 'finished'
+              )
+          ), 0),
+          total_goals_conceded = COALESCE((
+            SELECT SUM(CASE WHEN mp.team = 'orange' THEN m.team_black_score ELSE m.team_orange_score END)
+            FROM match_participants mp
+            JOIN matches m ON mp.match_id = m.match_id
+            WHERE mp.player_id = p.player_id AND m.status = 'finished'
+          ), 0),
+          updated_at = CURRENT_TIMESTAMP
+      `);
+      return { sunday_id: sundayId, matches_inserted: payload.matches.length, participants_inserted: payload.participants.length, stats_inserted: payload.stats_log.length, attendances_inserted: (payload.attendances || []).length };
+    });
+    res.json({ message: 'Backup restaurado com sucesso', result: result });
+  } catch (error) {
+    console.error('Erro ao restaurar backup do domingo:', error);
+    res.status(500).json({ error: 'Erro ao restaurar backup do domingo' });
   }
 });
 

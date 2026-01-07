@@ -269,7 +269,7 @@ const Admin: React.FC = () => {
   const saveSundayBackup = async () => {
     if (!selectedSundayId) return
     try {
-      const resp = await api.post(`/api/sundays/${selectedSundayId}/backup/save`)
+      await api.post(`/api/sundays/${selectedSundayId}/backup/save`)
       toast.success('Backup salvo na pasta raiz')
     } catch {
       toast.error('Erro ao salvar backup do domingo')

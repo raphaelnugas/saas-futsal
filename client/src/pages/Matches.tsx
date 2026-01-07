@@ -153,6 +153,7 @@ const Matches: React.FC = () => {
   const [rodizioWinnerColor, setRodizioWinnerColor] = useState<'black'|'orange'|null>(null)
   const [selectedChallengers, setSelectedChallengers] = useState<number[]>([])
   const [rotationApplied, setRotationApplied] = useState<'gk'|'full'|null>(null)
+  const [currentSundayDate, setCurrentSundayDate] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (didRunFetchRef.current) return
@@ -255,9 +256,11 @@ const Matches: React.FC = () => {
       setPlayers(playersList)
       setMatches(matchesList)
       try {
-        const sundaysApi = (sundaysResponse.data?.sundays || []) as Array<{ sunday_id: number }>
+        const sundaysApi = (sundaysResponse.data?.sundays || []) as Array<{ sunday_id: number; date?: string }>
         if (sundaysApi.length > 0) {
           const latestSundayId = sundaysApi[0].sunday_id
+          const latestSundayDate = String((sundaysApi[0] as { date?: string }).date || '')
+          setCurrentSundayDate(latestSundayDate || undefined)
           const attResp = await api.get(`/api/sundays/${latestSundayId}/attendances`)
           const rows = Array.isArray(attResp.data?.attendances)
             ? attResp.data.attendances
@@ -501,8 +504,8 @@ const Matches: React.FC = () => {
   }
   const prefillNextMatch = async () => {
     try {
-      const latestDate = matches.length ? matches[0].match_date : undefined
-      const finishedToday = matches.filter(m => m.status === 'finished' && (!latestDate || m.match_date === latestDate))
+      const targetDate = currentSundayDate
+      const finishedToday = matches.filter(m => m.status === 'finished' && (!!targetDate && m.match_date === targetDate))
       if (!finishedToday.length) {
         toast.error('Nenhuma partida finalizada para rodízio')
         return
@@ -542,7 +545,7 @@ const Matches: React.FC = () => {
           }
         }
       }
-      let winnerColor: 'black'|'orange' = remainTeam || lastWinner
+      const winnerColor: 'black'|'orange' = remainTeam || lastWinner
       if (!parts.length) {
         const winnerPlayers = teams[winnerColor]
         const winnerIds = winnerPlayers.map(p => p.id)
@@ -2015,8 +2018,8 @@ const Matches: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900">Partidas</h1>
         {(() => {
           const anyInProgress = matchInProgress || matches.some(m => m.status === 'in_progress')
-          const latestDate = matches.length ? matches[0].match_date : undefined
-          const hasFinishedToday = matches.some(m => m.status === 'finished' && (!latestDate || m.match_date === latestDate))
+          const targetDate = currentSundayDate
+          const hasFinishedToday = matches.some(m => m.status === 'finished' && (!!targetDate && m.match_date === targetDate))
           if (anyInProgress) {
             return null
           }
@@ -2044,7 +2047,7 @@ const Matches: React.FC = () => {
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
               <Plus className="w-4 h-4 mr-2" />
-              Nova Partida
+              Criar Partida
             </button>
           )
         })()}

@@ -76,6 +76,10 @@ const Admin: React.FC = () => {
   const [adjustLoading, setAdjustLoading] = useState(false)
   const [restoreLoading, setRestoreLoading] = useState(false)
   const [restoreFileName, setRestoreFileName] = useState<string>('')
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false)
+  const [summaryAttendees, setSummaryAttendees] = useState<{ player_id: number; name: string }[]>([])
+  const [summaryInputs, setSummaryInputs] = useState<Record<number, { goals: string; assists: string }>>({})
+  const [summaryLoading, setSummaryLoading] = useState(false)
 
   useEffect(() => {
     loadPlayers()
@@ -329,9 +333,101 @@ const Admin: React.FC = () => {
     }
   }
 
+  const loadSummaryAttendees = async (sundayId: number): Promise<{ player_id: number; name: string }[]> => {
+    try {
+      const resp = await api.get(`/api/sundays/${sundayId}`)
+      const list = ((resp.data?.sunday?.attendees || []) as Array<{ player_id: number; name: string }>)
+        .filter(a => Number.isFinite(a.player_id) && Number(a.player_id) > 0 && typeof a.name === 'string' && a.name.trim().length > 0)
+      setSummaryAttendees(list)
+      return list
+    } catch {
+      setSummaryAttendees([])
+      toast.error('Erro ao carregar presenças do domingo')
+      return []
+    }
+  }
+  const openSummaryModal = async () => {
+    if (!selectedSundayId) return
+    setSummaryLoading(true)
+    try {
+      const list = await loadSummaryAttendees(selectedSundayId)
+      try {
+        const respSunday = await api.get(`/api/sundays/${selectedSundayId}`)
+        const matches = Array.isArray(respSunday.data?.sunday?.matches) ? respSunday.data.sunday.matches as Array<{ match_id: number; match_number: number }> : []
+        const summaryMatch = matches.find(m => Number(m.match_number) === 0)
+        if (summaryMatch) {
+          const statsResp = await api.get(`/api/matches/${summaryMatch.match_id}/stats`)
+          const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string }> : []
+          const onlySummary = stats.filter(s => String(s.event_type || 'goal') === 'summary_goal')
+          const goalsMap = new Map<number, number>()
+          const assistsMap = new Map<number, number>()
+          for (const s of onlySummary) {
+            if (Number.isFinite(s.player_scorer_id) && Number(s.player_scorer_id) > 0) {
+              const pid = Number(s.player_scorer_id)
+              goalsMap.set(pid, (goalsMap.get(pid) || 0) + 1)
+            }
+            if (Number.isFinite(s.player_assist_id) && Number(s.player_assist_id) > 0) {
+              const pid = Number(s.player_assist_id)
+              assistsMap.set(pid, (assistsMap.get(pid) || 0) + 1)
+            }
+          }
+          {
+            const next: Record<number, { goals: string; assists: string }> = {}
+            for (const a of list) {
+              next[a.player_id] = {
+                goals: String(goalsMap.get(a.player_id) || 0),
+                assists: String(assistsMap.get(a.player_id) || 0)
+              }
+            }
+            setSummaryInputs(next)
+          }
+        } else {
+          {
+            const next: Record<number, { goals: string; assists: string }> = {}
+            for (const a of list) {
+              next[a.player_id] = { goals: '0', assists: '0' }
+            }
+            setSummaryInputs(next)
+          }
+        }
+      } catch {
+        {
+          const next: Record<number, { goals: string; assists: string }> = {}
+          for (const a of list) {
+            next[a.player_id] = { goals: '0', assists: '0' }
+          }
+          setSummaryInputs(next)
+        }
+      }
+      setSummaryModalOpen(true)
+    } catch {
+      toast.error('Erro ao abrir súmula')
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+  const submitSummaryBatch = async () => {
+    if (!selectedSundayId) return
+    try {
+      const entries = summaryAttendees.map(a => {
+        const rawG = Number(summaryInputs[a.player_id]?.goals || 0)
+        const rawS = Number(summaryInputs[a.player_id]?.assists || 0)
+        const g = Number.isFinite(rawG) ? Math.max(0, Math.floor(rawG)) : 0
+        const s = Number.isFinite(rawS) ? Math.max(0, Math.floor(rawS)) : 0
+        return { player_id: a.player_id, goals: g, assists: s }
+      })
+      await api.post(`/api/sundays/${selectedSundayId}/summary-set`, { entries })
+      toast.success('Súmula atualizada')
+      setSummaryModalOpen(false)
+      await loadPlayers()
+    } catch {
+      toast.error('Erro ao atualizar súmula')
+    }
+  }
   return (
     <div className="space-y-8">
       <h2 className="text-2xl font-bold text-gray-900">Admin</h2>
+
 
       <section>
         <h3 className="text-lg font-semibold mb-3">Ferramentas</h3>
@@ -492,6 +588,60 @@ const Admin: React.FC = () => {
           ))}
         </div>
       </section>
+      {summaryModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Editar Súmula em Lote</h3>
+            {summaryLoading ? (
+              <div className="text-sm text-gray-600">Carregando…</div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-auto">
+                {summaryAttendees.map(a => (
+                  <div key={a.player_id} className="grid grid-cols-3 gap-2 items-end">
+                    <div className="text-sm text-gray-700">{a.name}</div>
+                    <div>
+                      <label className="block text-xs text-gray-600">Gols</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={summaryInputs[a.player_id]?.goals ?? ''}
+                        onChange={(e) => setSummaryInputs(prev => ({ ...prev, [a.player_id]: { goals: e.target.value, assists: prev[a.player_id]?.assists ?? '' } }))}
+                        className="mt-1 block w-full border-gray-300 rounded-md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600">Assistências</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={summaryInputs[a.player_id]?.assists ?? ''}
+                        onChange={(e) => setSummaryInputs(prev => ({ ...prev, [a.player_id]: { goals: prev[a.player_id]?.goals ?? '', assists: e.target.value } }))}
+                        className="mt-1 block w-full border-gray-300 rounded-md"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setSummaryModalOpen(false)}
+                className="px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={submitSummaryBatch}
+                className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm"
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section>
         <h3 className="text-lg font-semibold mb-3">Auditoria de Domingos</h3>
@@ -517,6 +667,13 @@ const Admin: React.FC = () => {
             className="px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm disabled:opacity-50"
           >
             Auditar domingo selecionado
+          </button>
+          <button
+            onClick={openSummaryModal}
+            disabled={!selectedSundayId}
+            className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm disabled:opacity-50"
+          >
+            Súmula
           </button>
         </div>
       </section>

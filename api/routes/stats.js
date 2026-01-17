@@ -65,6 +65,7 @@ router.get('/dashboard', async (req, res) => {
         team_scored,
         COUNT(*) as total_goals
       FROM stats_log
+      WHERE COALESCE(event_type, 'goal') = 'goal'
       GROUP BY team_scored
       ORDER BY total_goals DESC
     `);
@@ -663,7 +664,7 @@ router.post('/recalculate', requireAdmin, async (req, res) => {
           SELECT COUNT(*)
           FROM stats_log s
           WHERE s.player_scorer_id = p.player_id
-            AND COALESCE(s.event_type, 'goal') = 'goal'
+            AND COALESCE(s.event_type, 'goal') IN ('goal','summary_goal')
             AND EXISTS (
               SELECT 1 FROM matches m WHERE m.match_id = s.match_id AND m.status = 'finished'
             )
@@ -672,7 +673,7 @@ router.post('/recalculate', requireAdmin, async (req, res) => {
           SELECT COUNT(*)
           FROM stats_log s
           WHERE s.player_assist_id = p.player_id
-            AND COALESCE(s.event_type, 'goal') = 'goal'
+            AND COALESCE(s.event_type, 'goal') IN ('goal','summary_goal')
             AND EXISTS (
               SELECT 1 FROM matches m WHERE m.match_id = s.match_id AND m.status = 'finished'
             )

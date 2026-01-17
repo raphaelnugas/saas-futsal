@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Plus, Calendar, Users, CheckCircle, XCircle, Clock, Trash2 } from 'lucide-react'
+import { Plus, Calendar, Users, CheckCircle, XCircle, Clock, Trash2, BookOpen } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
 
@@ -69,6 +69,11 @@ const Sundays: React.FC = () => {
   const [showAttendance, setShowAttendance] = useState(false)
   const [deletingSundayId, setDeletingSundayId] = useState<number | null>(null)
   const [confirmDeleteSunday, setConfirmDeleteSunday] = useState<Sunday | null>(null)
+  const [showSummary, setShowSummary] = useState(false)
+  const [summarySunday, setSummarySunday] = useState<Sunday | null>(null)
+  const [summaryRows, setSummaryRows] = useState<Array<{ player_id: number; name: string; goals: number; assists: number }>>([])
+  const [summaryTotals, setSummaryTotals] = useState<{ goals: number; assists: number }>({ goals: 0, assists: 0 })
+  const [summaryLoading, setSummaryLoading] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -224,6 +229,60 @@ const Sundays: React.FC = () => {
     }
   }
 
+  const handleOpenSummary = async (sunday: Sunday) => {
+    try {
+      setSummaryLoading(true)
+      setSummarySunday(sunday)
+      setShowSummary(true)
+      const respSunday = await api.get(`/api/sundays/${sunday.id}`)
+      const matches = Array.isArray(respSunday.data?.sunday?.matches) ? respSunday.data.sunday.matches as Array<{ match_id: number; match_number: number }> : []
+      const summaryMatch = matches.find(m => Number(m.match_number) === 0)
+      if (!summaryMatch) {
+        setSummaryRows([])
+        setSummaryTotals({ goals: 0, assists: 0 })
+        return
+      }
+      const statsResp = await api.get(`/api/matches/${summaryMatch.match_id}/stats`)
+      const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string }> : []
+      const onlySummary = stats.filter(s => String(s.event_type || 'goal') === 'summary_goal')
+      const goalsMap = new Map<number, number>()
+      const assistsMap = new Map<number, number>()
+      for (const s of onlySummary) {
+        if (Number.isFinite(s.player_scorer_id) && Number(s.player_scorer_id) > 0) {
+          const pid = Number(s.player_scorer_id)
+          goalsMap.set(pid, (goalsMap.get(pid) || 0) + 1)
+        }
+        if (Number.isFinite(s.player_assist_id) && Number(s.player_assist_id) > 0) {
+          const pid = Number(s.player_assist_id)
+          assistsMap.set(pid, (assistsMap.get(pid) || 0) + 1)
+        }
+      }
+      const ids = Array.from(new Set([...goalsMap.keys(), ...assistsMap.keys()]))
+      const nameById = new Map<number, string>()
+      for (const p of players) {
+        nameById.set(p.id, p.name)
+      }
+      const rows = ids.map(pid => ({
+        player_id: pid,
+        name: nameById.get(pid) || `Jogador ${pid}`,
+        goals: goalsMap.get(pid) || 0,
+        assists: assistsMap.get(pid) || 0
+      })).sort((a, b) => (b.goals - a.goals) || (b.assists - a.assists) || (a.name.localeCompare(b.name)))
+      const totals = {
+        goals: rows.reduce((acc, r) => acc + r.goals, 0),
+        assists: rows.reduce((acc, r) => acc + r.assists, 0)
+      }
+      setSummaryRows(rows)
+      setSummaryTotals(totals)
+    } catch {
+      toast.error('Erro ao carregar súmula')
+      setSummaryRows([])
+      setSummaryTotals({ goals: 0, assists: 0 })
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled': return 'bg-blue-100 text-blue-800'
@@ -303,6 +362,14 @@ const Sundays: React.FC = () => {
               >
                 <Users className="w-4 h-4 mr-2" />
                 Gerenciar Presenças
+              </button>
+              <button
+                onClick={() => handleOpenSummary(sunday)}
+                className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                title="Visualizar súmula deste domingo"
+              >
+                <BookOpen className="w-4 h-4 mr-2" />
+                Súmula
               </button>
               <button
                 onClick={() => setConfirmDeleteSunday(sunday)}
@@ -503,6 +570,55 @@ const Sundays: React.FC = () => {
               >
                 Apagar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Modal */}
+      {showSummary && summarySunday && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">
+                  Súmula — {parseSundayDate(summarySunday.sunday_date).toLocaleDateString('pt-BR')}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowSummary(false)
+                    setSummarySunday(null)
+                    setSummaryRows([])
+                    setSummaryTotals({ goals: 0, assists: 0 })
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+              {summaryLoading ? (
+                <div className="text-sm text-gray-600">Carregando…</div>
+              ) : (
+                <>
+                  {summaryRows.length === 0 ? (
+                    <div className="text-sm text-gray-600">Nenhuma súmula registrada para este domingo.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="text-sm text-gray-700">
+                        Total — Gols: <span className="font-semibold">{summaryTotals.goals}</span> • Assistências: <span className="font-semibold">{summaryTotals.assists}</span>
+                      </div>
+                      <div className="divide-y">
+                        {summaryRows.map(r => (
+                          <div key={r.player_id} className="py-2 flex items-center justify-between">
+                            <div className="text-sm text-gray-800">{r.name}</div>
+                            <div className="text-sm text-gray-600">Gols: <span className="font-semibold">{r.goals}</span> • Assistências: <span className="font-semibold">{r.assists}</span></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -805,4 +805,298 @@ router.post('/backup/restore', requireAdmin, async (req, res) => {
   }
 });
 
+router.post('/:id/summary-goal', requireAdmin, [
+  body('scorer_id').isInt({ min: 1 }).withMessage('ID do autor do gol inválido'),
+  body('assist_id').optional().isInt({ min: 1 }).withMessage('ID da assistência inválido')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Erro de validação', details: errors.array() });
+    }
+    const { id } = req.params;
+    const scorerId = Number(req.body.scorer_id);
+    const assistId = req.body.assist_id ? Number(req.body.assist_id) : null;
+    const sundayRes = await query('SELECT * FROM game_sundays WHERE sunday_id = $1', [id]);
+    if (sundayRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Domingo não encontrado' });
+    }
+    const playersRes = await query('SELECT player_id FROM players WHERE player_id = ANY($1)', [[scorerId, assistId].filter(n => Number.isFinite(n) && n > 0)]);
+    const valid = new Set(playersRes.rows.map(r => Number(r.player_id)));
+    if (!valid.has(scorerId)) {
+      return res.status(400).json({ error: 'Autor do gol não existe' });
+    }
+    if (assistId && !valid.has(assistId)) {
+      return res.status(400).json({ error: 'Jogador de assistência não existe' });
+    }
+    const attendRes = await query(`
+      SELECT player_id FROM attendances WHERE sunday_id = $1 AND is_present = true AND player_id = ANY($2)
+    `, [id, [scorerId, assistId].filter(n => Number.isFinite(n) && n > 0)]);
+    const present = new Set(attendRes.rows.map(r => Number(r.player_id)));
+    if (!present.has(scorerId)) {
+      return res.status(400).json({ error: 'Autor do gol não está presente no domingo selecionado' });
+    }
+    if (assistId && !present.has(assistId)) {
+      return res.status(400).json({ error: 'Assistente não está presente no domingo selecionado' });
+    }
+    const matchRes = await query(`
+      SELECT match_id FROM matches WHERE sunday_id = $1 AND match_number = 0 LIMIT 1
+    `, [id]);
+    let summaryMatchId = matchRes.rows[0]?.match_id;
+    if (!summaryMatchId) {
+      const ins = await query(`
+        INSERT INTO matches (sunday_id, match_number, status, team_orange_score, team_black_score, winner_team, start_time, end_time)
+        VALUES ($1, 0, 'finished', 0, 0, 'draw', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING match_id
+      `, [id]);
+      summaryMatchId = ins.rows[0].match_id;
+    }
+    let inserted;
+    await transaction(async (client) => {
+      const ins = await client.query(`
+        INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+        VALUES ($1, $2, $3, 'orange', NULL, FALSE, 'summary_goal')
+        RETURNING *
+      `, [summaryMatchId, scorerId, assistId || null]);
+      inserted = ins.rows[0];
+      await client.query(`
+        UPDATE players
+        SET total_goals_scored = total_goals_scored + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE player_id = $1
+      `, [scorerId]);
+      if (assistId) {
+        await client.query(`
+          UPDATE players
+          SET total_assists = total_assists + 1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE player_id = $1
+        `, [assistId]);
+      }
+    });
+    res.status(201).json({ message: 'Gol/assistência via súmula registrada', stat: inserted });
+  } catch (error) {
+    console.error('Erro ao registrar súmula:', error);
+    res.status(500).json({ error: 'Erro ao registrar súmula' });
+  }
+});
+
+router.post('/:id/summary-batch', requireAdmin, [
+  body('entries').isArray({ min: 1 }).withMessage('Lista de lançamentos é obrigatória'),
+  body('entries.*.player_id').toInt().isInt({ min: 1 }).withMessage('ID do jogador inválido'),
+  body('entries.*.goals').toInt().isInt({ min: 0 }).withMessage('Gols deve ser inteiro >= 0'),
+  body('entries.*.assists').toInt().isInt({ min: 0 }).withMessage('Assistências deve ser inteiro >= 0')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Erro de validação', details: errors.array() });
+    }
+    const { id } = req.params;
+    const entries = Array.isArray(req.body.entries) ? req.body.entries : [];
+    const sundayRes = await query('SELECT sunday_id FROM game_sundays WHERE sunday_id = $1', [id]);
+    if (sundayRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Domingo não encontrado' });
+    }
+    const playerIds = Array.from(new Set(entries.map(e => Number(e.player_id)).filter(n => Number.isFinite(n) && n > 0)));
+    const playersRes = await query('SELECT player_id FROM players WHERE player_id = ANY($1)', [playerIds]);
+    const valid = new Set(playersRes.rows.map(r => Number(r.player_id)));
+    for (const pid of playerIds) {
+      if (!valid.has(pid)) {
+        return res.status(400).json({ error: `Jogador ${pid} não existe` });
+      }
+    }
+    const attendRes = await query(`
+      SELECT player_id FROM attendances WHERE sunday_id = $1 AND is_present = true AND player_id = ANY($2)
+    `, [id, playerIds]);
+    const present = new Set(attendRes.rows.map(r => Number(r.player_id)));
+    for (const e of entries) {
+      if (!present.has(Number(e.player_id))) {
+        return res.status(400).json({ error: `Jogador ${e.player_id} não está presente no domingo selecionado` });
+      }
+    }
+    const matchRes = await query(`
+      SELECT match_id FROM matches WHERE sunday_id = $1 AND match_number = 0 LIMIT 1
+    `, [id]);
+    let summaryMatchId = matchRes.rows[0]?.match_id;
+    if (!summaryMatchId) {
+      const ins = await query(`
+        INSERT INTO matches (sunday_id, match_number, status, team_orange_score, team_black_score, winner_team, start_time, end_time)
+        VALUES ($1, 0, 'finished', 0, 0, 'draw', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING match_id
+      `, [id]);
+      summaryMatchId = ins.rows[0].match_id;
+    }
+    await transaction(async (client) => {
+      for (const e of entries) {
+        const pid = Number(e.player_id);
+        const g = Math.max(0, Number(e.goals));
+        const a = Math.max(0, Number(e.assists));
+        for (let i = 0; i < g; i++) {
+          await client.query(`
+            INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+            VALUES ($1, $2, NULL, 'orange', NULL, FALSE, 'summary_goal')
+          `, [summaryMatchId, pid]);
+        }
+        for (let i = 0; i < a; i++) {
+          await client.query(`
+            INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+            VALUES ($1, NULL, $2, 'orange', NULL, FALSE, 'summary_goal')
+          `, [summaryMatchId, pid]);
+        }
+        if (g > 0) {
+          await client.query(`
+            UPDATE players
+            SET total_goals_scored = total_goals_scored + $1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE player_id = $2
+          `, [g, pid]);
+        }
+        if (a > 0) {
+          await client.query(`
+            UPDATE players
+            SET total_assists = total_assists + $1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE player_id = $2
+          `, [a, pid]);
+        }
+      }
+    });
+    res.status(201).json({ message: 'Súmula registrada em lote', inserted_players: entries.length });
+  } catch (error) {
+    console.error('Erro ao registrar súmula em lote:', error);
+    res.status(500).json({ error: 'Erro ao registrar súmula em lote' });
+  }
+});
+
+router.post('/:id/summary-set', requireAdmin, [
+  body('entries').isArray({ min: 0 }).withMessage('Lista de lançamentos é obrigatória'),
+  body('entries.*.player_id').toInt().isInt({ min: 1 }).withMessage('ID do jogador inválido'),
+  body('entries.*.goals').toInt().isInt({ min: 0 }).withMessage('Gols deve ser inteiro >= 0'),
+  body('entries.*.assists').toInt().isInt({ min: 0 }).withMessage('Assistências deve ser inteiro >= 0')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Erro de validação', details: errors.array() });
+    }
+    const { id } = req.params;
+    const entries = Array.isArray(req.body.entries) ? req.body.entries : [];
+    const sundayRes = await query('SELECT sunday_id FROM game_sundays WHERE sunday_id = $1', [id]);
+    if (sundayRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Domingo não encontrado' });
+    }
+    const playerIds = Array.from(new Set(entries.map(e => Number(e.player_id)).filter(n => Number.isFinite(n) && n > 0)));
+    if (playerIds.length > 0) {
+      const playersRes = await query('SELECT player_id FROM players WHERE player_id = ANY($1)', [playerIds]);
+      const valid = new Set(playersRes.rows.map(r => Number(r.player_id)));
+      for (const pid of playerIds) {
+        if (!valid.has(pid)) {
+          return res.status(400).json({ error: `Jogador ${pid} não existe` });
+        }
+      }
+      const attendRes = await query(`
+        SELECT player_id FROM attendances WHERE sunday_id = $1 AND is_present = true AND player_id = ANY($2)
+      `, [id, playerIds]);
+      const present = new Set(attendRes.rows.map(r => Number(r.player_id)));
+      for (const e of entries) {
+        if (!present.has(Number(e.player_id))) {
+          return res.status(400).json({ error: `Jogador ${e.player_id} não está presente no domingo selecionado` });
+        }
+      }
+    }
+    const matchRes = await query(`
+      SELECT match_id FROM matches WHERE sunday_id = $1 AND match_number = 0 LIMIT 1
+    `, [id]);
+    let summaryMatchId = matchRes.rows[0]?.match_id;
+    if (!summaryMatchId) {
+      const ins = await query(`
+        INSERT INTO matches (sunday_id, match_number, status, team_orange_score, team_black_score, winner_team, start_time, end_time)
+        VALUES ($1, 0, 'finished', 0, 0, 'draw', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING match_id
+      `, [id]);
+      summaryMatchId = ins.rows[0].match_id;
+    }
+    const existingRes = await query(`
+      SELECT player_scorer_id, player_assist_id
+      FROM stats_log
+      WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'summary_goal'
+    `, [summaryMatchId]);
+    const oldGoals = new Map();
+    const oldAssists = new Map();
+    for (const r of existingRes.rows) {
+      if (Number.isFinite(r.player_scorer_id) && Number(r.player_scorer_id) > 0) {
+        const pid = Number(r.player_scorer_id);
+        oldGoals.set(pid, (oldGoals.get(pid) || 0) + 1);
+      }
+      if (Number.isFinite(r.player_assist_id) && Number(r.player_assist_id) > 0) {
+        const pid = Number(r.player_assist_id);
+        oldAssists.set(pid, (oldAssists.get(pid) || 0) + 1);
+      }
+    }
+    const newGoals = new Map();
+    const newAssists = new Map();
+    for (const e of entries) {
+      const pid = Number(e.player_id);
+      const g = Math.max(0, Number(e.goals));
+      const a = Math.max(0, Number(e.assists));
+      newGoals.set(pid, g);
+      newAssists.set(pid, a);
+    }
+    const affected = new Set([
+      ...Array.from(oldGoals.keys()),
+      ...Array.from(oldAssists.keys()),
+      ...Array.from(newGoals.keys()),
+      ...Array.from(newAssists.keys())
+    ]);
+    await transaction(async (client) => {
+      for (const pid of affected) {
+        const prevG = oldGoals.get(pid) || 0;
+        const prevA = oldAssists.get(pid) || 0;
+        const nextG = newGoals.get(pid) || 0;
+        const nextA = newAssists.get(pid) || 0;
+        const deltaG = nextG - prevG;
+        const deltaA = nextA - prevA;
+        if (deltaG !== 0) {
+          await client.query(`
+            UPDATE players
+            SET total_goals_scored = GREATEST(total_goals_scored + $1, 0),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE player_id = $2
+          `, [deltaG, pid]);
+        }
+        if (deltaA !== 0) {
+          await client.query(`
+            UPDATE players
+            SET total_assists = GREATEST(total_assists + $1, 0),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE player_id = $2
+          `, [deltaA, pid]);
+        }
+      }
+      await client.query(`DELETE FROM stats_log WHERE match_id = $1 AND COALESCE(event_type, 'goal') = 'summary_goal'`, [summaryMatchId]);
+      for (const [pid, g] of newGoals.entries()) {
+        for (let i = 0; i < g; i++) {
+          await client.query(`
+            INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+            VALUES ($1, $2, NULL, 'orange', NULL, FALSE, 'summary_goal')
+          `, [summaryMatchId, pid]);
+        }
+      }
+      for (const [pid, a] of newAssists.entries()) {
+        for (let i = 0; i < a; i++) {
+          await client.query(`
+            INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+            VALUES ($1, NULL, $2, 'orange', NULL, FALSE, 'summary_goal')
+          `, [summaryMatchId, pid]);
+        }
+      }
+    });
+    res.status(200).json({ message: 'Súmula atualizada', updated_players: affected.size });
+  } catch (error) {
+    console.error('Erro ao ajustar súmula:', error);
+    res.status(500).json({ error: 'Erro ao ajustar súmula' });
+  }
+});
+
 module.exports = router;

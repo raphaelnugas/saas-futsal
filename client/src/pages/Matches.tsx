@@ -569,19 +569,19 @@ const Matches: React.FC = () => {
       const det = await api.get(`/api/matches/${last.id}`)
       const statsResp = await api.get(`/api/matches/${last.id}/stats`).catch(() => ({ data: { stats: [] } }))
       const parts = Array.isArray(det.data?.match?.participants) ? det.data.match.participants as Array<{ team: 'black'|'orange'; player_id: number }> : []
-      const getWinnerColor = (m: Match): 'black'|'orange' => {
+      const getWinnerColor = (m: Match): 'black'|'orange'|null => {
         const raw = typeof m.winning_team === 'string' ? m.winning_team : 'draw'
         if (raw === 'orange') return 'orange'
         if (raw === 'black') return 'black'
         if (m.tie_decider_winner === 'orange' || m.tie_decider_winner === 'black') return m.tie_decider_winner
-        return 'black'
+        return null
       }
-      const lastWinner: 'black'|'orange' = getWinnerColor(last)
+      const lastWinner = getWinnerColor(last)
       const orangeCounter = Number((det.data?.match as { team_orange_win_streak?: number })?.team_orange_win_streak || 0)
       const blackCounter = Number((det.data?.match as { team_black_win_streak?: number })?.team_black_win_streak || 0)
       const presentIdsAll = Object.keys(presentMap).filter(id => presentMap[Number(id)]).map(Number)
       const presentCountAll = presentIdsAll.length
-      const winnerCounter = lastWinner === 'black' ? blackCounter : orangeCounter
+      const winnerCounter = lastWinner === 'black' ? blackCounter : lastWinner === 'orange' ? orangeCounter : 0
       // Terceira consecutiva do vencedor: ambos saem, sem pré-preencher
       if (winnerCounter >= 2) {
         setRodizioMode(false)
@@ -630,7 +630,27 @@ const Matches: React.FC = () => {
       } else {
         remainTeam = null
       }
-      const winnerColor: 'black'|'orange' = remainTeam || lastWinner
+      const winnerColor = remainTeam || lastWinner
+      if (!winnerColor) {
+        setRodizioMode(false)
+        setRodizioWinnerColor(null)
+        setSelectedPlayers([])
+        setSelectedChallengers([])
+        setTeams({ black: [], orange: [] })
+        setShowForm(true)
+        const benchIdsAll = Array.from(new Set<number>([
+          ...teams.black.map(p => p.id),
+          ...teams.orange.map(p => p.id),
+          ...bench.map(p => p.id)
+        ]))
+        setBench(players.filter(p => benchIdsAll.includes(p.id)))
+        try {
+          localStorage.setItem('matchTeams', JSON.stringify({ black: [], orange: [] }))
+          localStorage.setItem('matchBench', JSON.stringify(benchIdsAll))
+        } catch { void 0 }
+        toast.success('Sem vencedor definido: selecione manualmente.')
+        return
+      }
       if (!parts.length) {
         const winnerPlayers = teams[winnerColor]
         const winnerIds = winnerPlayers.map(p => p.id)

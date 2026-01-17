@@ -95,7 +95,8 @@ async function ensureCardGoldInDb() {
   `);
   const existing = await query('SELECT asset_mime, asset_data FROM system_assets WHERE asset_key = $1', ['CARD_GOLD']);
   if (existing.rows.length === 0) {
-    const buffer = fs.readFileSync('c:\\Futsal\\FutsalNautico\\database\\CARD_GOLD.png');
+    const cardPath = path.resolve(__dirname, '..', 'database', 'CARD_GOLD.png');
+    const buffer = fs.readFileSync(cardPath);
     await query('INSERT INTO system_assets (asset_key, asset_mime, asset_data) VALUES ($1, $2, $3)', ['CARD_GOLD', 'image/png', buffer]);
     return { mime: 'image/png', data: buffer };
   }
@@ -114,6 +115,40 @@ app.get('/api/assets/card-gold', authenticateToken, async (req, res) => {
   } catch (error) {
     logger.error('Erro ao servir /api/assets/card-gold', { error: error.message, requestId: req.id });
     res.status(500).json({ error: 'Erro ao obter template da carta' });
+  }
+});
+
+let CRAQUE_BADGE_CACHE = { mime: null, data: null };
+async function ensureCraqueBadgeInDb() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS system_assets (
+      asset_key VARCHAR(100) PRIMARY KEY,
+      asset_mime VARCHAR(100) NOT NULL,
+      asset_data BYTEA NOT NULL,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  const existing = await query('SELECT asset_mime, asset_data FROM system_assets WHERE asset_key = $1', ['CRAQUE_BADGE']);
+  if (existing.rows.length === 0) {
+    const badgePath = path.resolve(__dirname, '..', 'database', 'Craque do Domingo.png');
+    const buffer = fs.readFileSync(badgePath);
+    await query('INSERT INTO system_assets (asset_key, asset_mime, asset_data) VALUES ($1, $2, $3)', ['CRAQUE_BADGE', 'image/png', buffer]);
+    return { mime: 'image/png', data: buffer };
+  }
+  return { mime: existing.rows[0].asset_mime, data: existing.rows[0].asset_data };
+}
+
+app.get('/api/assets/craque-badge', authenticateToken, async (req, res) => {
+  try {
+    if (!CRAQUE_BADGE_CACHE.mime || !CRAQUE_BADGE_CACHE.data) {
+      const loaded = await ensureCraqueBadgeInDb();
+      CRAQUE_BADGE_CACHE = loaded;
+    }
+    res.set('Content-Type', CRAQUE_BADGE_CACHE.mime || 'image/png');
+    res.send(CRAQUE_BADGE_CACHE.data);
+  } catch (error) {
+    logger.error('Erro ao servir /api/assets/craque-badge', { error: error.message, requestId: req.id });
+    res.status(500).json({ error: 'Erro ao obter imagem do craque' });
   }
 });
 
@@ -223,6 +258,27 @@ app.listen(PORT, '0.0.0.0', () => {
         }
       } catch (err) {
         logger.error('Falha ao verificar/adicionar colunas em stats_log', { error: err.message });
+      }
+
+      try {
+        const gsColsRes = await query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'game_sundays'
+        `);
+        const gsCols = gsColsRes.rows.map(r => r.column_name);
+        const gsAdds = [];
+        if (!gsCols.includes('craque_player_id')) {
+          gsAdds.push(`ADD COLUMN craque_player_id INTEGER NULL`);
+        }
+        if (gsAdds.length) {
+          await query(`ALTER TABLE game_sundays ${gsAdds.join(', ')}`);
+          logger.info('Coluna craque_player_id adicionada em game_sundays');
+        } else {
+          logger.info('Coluna craque_player_id já existe em game_sundays');
+        }
+      } catch (err) {
+        logger.error('Falha ao verificar/adicionar colunas em game_sundays', { error: err.message });
       }
 
       try {

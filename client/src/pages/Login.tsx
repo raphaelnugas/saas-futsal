@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import { toast } from 'sonner'
 import { Lock, User } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'

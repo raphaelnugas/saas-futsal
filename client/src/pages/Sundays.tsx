@@ -24,6 +24,27 @@ interface Attendance {
   arrival_time?: string
 }
 
+type ApiSundayRow = {
+  sunday_id: number
+  date: string
+  total_attendees?: number
+  total_matches?: number
+  created_at: string
+}
+
+type ApiPlayerRow = {
+  player_id: number
+  name: string
+  is_goalkeeper?: boolean
+}
+
+type ApiAttendanceRow = {
+  player_id: number
+  is_present: boolean
+  arrival_time?: string | null
+  arrival_order?: number | null
+}
+
 const Sundays: React.FC = () => {
   const parseSundayDate = (dateStr: string) => {
     const s = String(dateStr || '')
@@ -59,11 +80,11 @@ const Sundays: React.FC = () => {
         api.get('/api/sundays'),
         api.get('/api/players')
       ])
-      const apiSundays = (sundaysResponse.data?.sundays || [])
-      const sundaysList = apiSundays.map((s: any, index: number) => {
+      const apiSundays = (sundaysResponse.data?.sundays || []) as ApiSundayRow[]
+      const sundaysList = apiSundays.map((s: ApiSundayRow, index: number) => {
         const isMostRecent = index === 0
         const hasMatches = Number(s.total_matches || 0) > 0
-        const status = isMostRecent
+        const status: Sunday['status'] = isMostRecent
           ? (hasMatches ? 'in_progress' : 'scheduled')
           : 'completed'
         return {
@@ -74,16 +95,23 @@ const Sundays: React.FC = () => {
           created_at: s.created_at
         }
       })
-      const playersList = (playersResponse.data?.players || []).map((p: any) => ({
+      const apiPlayers = (playersResponse.data?.players || []) as ApiPlayerRow[]
+      const playersList = apiPlayers.map((p: ApiPlayerRow) => ({
         id: p.player_id,
         name: p.name,
         position: p.is_goalkeeper ? 'Goleiro' : 'Jogador'
       }))
       setSundays(sundaysList)
       setPlayers(playersList)
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Erro ao carregar dados')
-      logError('sundays_load_error', { status: error?.response?.status, message: error?.message })
+      const status = typeof error === 'object' && error && 'response' in error
+        ? (error as { response?: { status?: number } }).response?.status
+        : undefined
+      const message = typeof error === 'object' && error && 'message' in error
+        ? (error as { message?: string }).message
+        : undefined
+      logError('sundays_load_error', { status, message })
     } finally {
       setLoading(false)
     }
@@ -109,12 +137,12 @@ const Sundays: React.FC = () => {
     
     try {
       const response = await api.get(`/api/sundays/${sunday.id}/attendances`)
-      const rows = Array.isArray(response.data?.attendances)
-        ? response.data.attendances
+      const rows: ApiAttendanceRow[] = Array.isArray(response.data?.attendances)
+        ? (response.data.attendances as ApiAttendanceRow[])
         : Array.isArray(response.data)
-          ? response.data
+          ? (response.data as ApiAttendanceRow[])
           : []
-      const normalized = rows.map((a: any) => ({
+      const normalized = rows.map((a: ApiAttendanceRow) => ({
         player_id: Number(a.player_id),
         is_present: !!a.is_present,
         arrival_time: undefined

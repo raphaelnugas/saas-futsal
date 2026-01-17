@@ -41,6 +41,26 @@ interface StatLog {
   is_own_goal: boolean
 }
 
+type ApiPlayerData = {
+  player_id: number
+  name: string
+  attr_ofe?: number
+  attr_def?: number
+  attr_vel?: number
+  attr_tec?: number
+  attr_for?: number
+  attr_pot?: number
+  total_games_played?: number
+  total_goals_scored?: number
+  total_assists?: number
+  total_goals_conceded?: number
+}
+
+type ApiSundayData = {
+  sunday_id: number
+  date: string
+}
+
 const Admin: React.FC = () => {
   const [players, setPlayers] = useState<PlayerDetail[]>([])
   const [matches, setMatches] = useState<Match[]>([])
@@ -80,8 +100,8 @@ const Admin: React.FC = () => {
   const loadPlayers = async () => {
     try {
       const resp = await api.get('/api/players')
-      const list = (resp.data?.players || []) as any[]
-      const details: PlayerDetail[] = list.map((pl: any) => ({
+      const list = (resp.data?.players || []) as ApiPlayerData[]
+      const details: PlayerDetail[] = list.map((pl) => ({
         player_id: pl.player_id,
         name: pl.name,
         attr_ofe: pl.attr_ofe || 50,
@@ -148,7 +168,7 @@ const Admin: React.FC = () => {
   const loadSundays = async () => {
     try {
       const resp = await api.get('/api/sundays')
-      const list = (resp.data?.sundays || []) as any[]
+      const list = (resp.data?.sundays || []) as ApiSundayData[]
       const mapped: SundaySummary[] = list.map(s => ({
         sunday_id: s.sunday_id,
         date: s.date,

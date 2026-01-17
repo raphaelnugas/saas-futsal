@@ -18,6 +18,7 @@ interface RecentMatch {
   team_blue_score: number
   team_orange_score: number
   winning_team: string
+  tie_decider_winner?: 'black' | 'orange' | null
 }
 
 interface ApiRecentMatch {
@@ -26,6 +27,7 @@ interface ApiRecentMatch {
   team_black_score: number
   team_orange_score: number
   winner_team: string
+  tie_decider_winner?: 'black' | 'orange' | null
 }
 
 interface TopSummary {
@@ -70,13 +72,16 @@ const Dashboard: React.FC = () => {
         total_sundays: general.total_sundays || 0,
         avg_goals_per_match: Number(general.avg_goals_per_match || 0)
       })
-      setRecentMatches(recent.map((m: unknown) => ({
+      const mappedRecent: RecentMatch[] = recent.map((m: unknown) => ({
         id: (m as ApiRecentMatch).match_id,
         match_date: (m as ApiRecentMatch).sunday_date,
         team_blue_score: (m as ApiRecentMatch).team_black_score,
         team_orange_score: (m as ApiRecentMatch).team_orange_score,
-        winning_team: (m as ApiRecentMatch).winner_team
-      })))
+        winning_team: (m as ApiRecentMatch).winner_team,
+        tie_decider_winner: (m as ApiRecentMatch).tie_decider_winner || null
+      }))
+      const currentSunday = mappedRecent.length ? mappedRecent[0].match_date : ''
+      setRecentMatches(mappedRecent.filter((r: RecentMatch) => r.match_date === currentSunday))
       const mapTop = (arr: unknown[], field: 'goals' | 'assists' | 'conceded') => (arr as (ApiTopItem & { total_goals_scored?: number; total_assists?: number; total_goals_conceded?: number; avg_goals_conceded?: number })[]).map((p) => ({
         id: Number(p.player_id || 0),
         name: String(p.name || ''),
@@ -110,7 +115,7 @@ const Dashboard: React.FC = () => {
           const canFetch = !!(meta?.photo_mime || meta?.has_photo)
           if (!canFetch) return { id: pl.id, url: '' }
           try {
-            const res = await api.get(`/api/players/${pl.id}/photo`, { responseType: 'arraybuffer' })
+            const res = await api.get(`/api/players/${pl.id}/photo?v=${Date.now()}`, { responseType: 'arraybuffer' })
             const ct = res.headers['content-type'] || meta?.photo_mime || 'image/jpeg'
             const bytes = new Uint8Array(res.data as ArrayBuffer)
             let bin = ''
@@ -194,10 +199,10 @@ const Dashboard: React.FC = () => {
         games_drawn: Number(p.games_drawn || 0),
         sundays_played: Number(p.sundays_played || 0),
         goals_per_sunday: Number(p.goals_per_sunday || 0),
-        gk_avg_conceded_year: Number((p as any).gk_avg_conceded_year || 0),
-        gk_sundays_year: Number((p as any).gk_sundays_year || 0),
-        total_sundays_year: Number((p as any).total_sundays_year || 0),
-        gk_sunday_participation_pct_year: Number((p as any).gk_sunday_participation_pct_year || 0),
+        gk_avg_conceded_year: Number(p.gk_avg_conceded_year || 0),
+        gk_sundays_year: Number(p.gk_sundays_year || 0),
+        total_sundays_year: Number(p.total_sundays_year || 0),
+        gk_sunday_participation_pct_year: Number(p.gk_sunday_participation_pct_year || 0),
       })))
       setModalOpen(type)
       setCategory(type ? type : 'all')
@@ -303,6 +308,21 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* History Card */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Link to="/sundays" className="block bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 bg-gray-100 rounded-lg p-3">
+              <Calendar className="h-6 w-6 text-gray-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-500">Histórico</p>
+              <p className="text-sm text-gray-600">Alternar entre domingos</p>
+            </div>
+          </div>
+        </Link>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Matches */}
         <div className="bg-white rounded-lg shadow">
@@ -329,6 +349,19 @@ const Dashboard: React.FC = () => {
                         <span className="font-medium">{match.team_orange_score}</span>
                         <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
                       </div>
+                      <span className="text-xs text-gray-600">
+                        {(() => {
+                          const wt = match.winning_team
+                          const tieWinner = match.tie_decider_winner
+                          if (wt === 'black') return '(preto)'
+                          if (wt === 'orange') return '(laranja)'
+                          if (wt === 'draw') {
+                            if (tieWinner === 'black') return '(preto)'
+                            if (tieWinner === 'orange') return '(laranja)'
+                          }
+                          return ''
+                        })()}
+                      </span>
                     </div>
                     <div className="text-sm text-gray-500">
                       {new Date(match.match_date).toLocaleDateString('pt-BR')}

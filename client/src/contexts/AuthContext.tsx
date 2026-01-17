@@ -1,30 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import api from '../services/api'
-
-interface User {
-  id: number
-  name: string
-  role: 'admin' | 'user'
-}
-
-interface AuthContextType {
-  user: User | null
-  login: (password: string) => Promise<boolean>
-  logout: () => void
-  isAuthenticated: boolean
-  isAdmin: boolean
-  loading: boolean
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-export const useAuth = () => {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
-}
+import { AuthContext, User } from '../hooks/useAuth'
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null)
@@ -58,7 +34,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (password: string): Promise<boolean> => {
     try {
-      const response = await api.post('/api/auth/login', { password })
+      const normalized = (typeof password === 'string' ? password.trim().toUpperCase() : '')
+      const response = await api.post('/api/auth/login', { password: normalized })
       const { token, user: u } = response.data
       
       localStorage.setItem('token', token)

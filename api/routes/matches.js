@@ -324,19 +324,6 @@ router.post('/', [
       });
     }
 
-    // Obter sequência de vitórias do time laranja
-    const lastMatchResult = await query(`
-      SELECT team_orange_win_streak 
-      FROM matches 
-      WHERE sunday_id = $1 
-      ORDER BY match_number DESC 
-      LIMIT 1
-    `, [sunday_id]);
-
-    const orangeWinStreak = lastMatchResult.rows.length > 0 
-      ? lastMatchResult.rows[0].team_orange_win_streak 
-      : 0;
-
     // Criar partida
     const result = await query(`
       INSERT INTO matches (
@@ -345,9 +332,9 @@ router.post('/', [
         team_orange_win_streak, 
         team_black_win_streak,
         status
-      ) VALUES ($1, $2, $3, 0, 'scheduled')
+      ) VALUES ($1, $2, 0, 0, 'scheduled')
       RETURNING *
-    `, [sunday_id, match_number, orangeWinStreak]);
+    `, [sunday_id, match_number]);
 
     res.status(201).json({
       message: 'Partida criada com sucesso',
@@ -385,12 +372,7 @@ router.post('/:id/teams', async (req, res) => {
     });
   }
 
-  const winStreakRule = parseInt(process.env.WIN_STREAK_RULE) || 3;
-  if ((Number(match.team_orange_win_streak || 0) >= winStreakRule) || (Number(match.team_black_win_streak || 0) >= winStreakRule)) {
-    await query(`UPDATE matches SET team_orange_win_streak = 0, team_black_win_streak = 0 WHERE match_id = $1`, [id]);
-    match.team_orange_win_streak = 0;
-    match.team_black_win_streak = 0;
-  }
+  // Não resetar contadores aqui; a lógica de rotação/saída será aplicada abaixo com base no histórico
 
   // Buscar jogadores presentes neste domingo
   const playersResult = await query(`
@@ -420,8 +402,41 @@ router.post('/:id/teams', async (req, res) => {
     const maxPlayersPerTeam = parseInt(process.env.MAX_PLAYERS_PER_TEAM) || 5;
     const totalPlayers = Math.min(players.length, maxPlayersPerTeam * 2);
 
-    // Aplicar regra de sequência de vitórias
-    const selectedPlayers = applyWinStreakRule(players, match.team_orange_win_streak);
+    // Determinar se o time vencedor anterior deve "sair" quando há muitos jogadores
+    let selectedPlayers = players.slice();
+    try {
+      const winnersRes = await query(`
+        SELECT match_id, winner_team
+        FROM matches
+        WHERE sunday_id = $1 AND match_number < $2 AND status = 'finished'
+        ORDER BY match_number DESC
+        LIMIT 3
+      `, [match.sunday_id, match.match_number]);
+      const winners = winnersRes.rows.map(r => r.winner_team).filter(w => w === 'black' || w === 'orange');
+      const threeInRow =
+        winners.length >= 3 && winners[0] === winners[1] && winners[1] === winners[2]
+          ? winners[0]
+          : null;
+      const presentCount = players.length;
+      if (threeInRow) {
+        const lastMatchId = winnersRes.rows[0]?.match_id;
+        if (lastMatchId) {
+          const prevParts = await query(`
+            SELECT player_id 
+            FROM match_participants 
+            WHERE match_id = $1 AND player_id IS NOT NULL
+          `, [lastMatchId]);
+          const benchIds = new Set(prevParts.rows.map(r => Number(r.player_id)));
+          const filtered = selectedPlayers.filter(p => !benchIds.has(Number(p.player_id)));
+          const needed = Math.min(selectedPlayers.length, maxPlayersPerTeam * 2);
+          if (filtered.length >= needed) {
+            selectedPlayers = filtered;
+          }
+        }
+      }
+    } catch {}
+    // Aplicar embaralhamento leve considerando possíveis ajustes
+    selectedPlayers = applyWinStreakRule(selectedPlayers, match.team_orange_win_streak);
 
     // Sortear times
     const { orangeTeam, blackTeam } = sortTeams(selectedPlayers);
@@ -618,6 +633,16 @@ router.post('/:id/participants', [
         const prev = prevRes.rows[0];
         const presRes = await query(`SELECT COUNT(*)::int AS c FROM attendances WHERE sunday_id = $1 AND is_present = true`, [matchRow.sunday_id]);
         const presentCount = Number(presRes.rows[0]?.c || 0);
+        const applyManyRule = typeof req.body?.apply_many_present_rule === 'boolean' ? !!req.body.apply_many_present_rule : true;
+        const winnersRes = await query(`
+          SELECT winner_team
+          FROM matches
+          WHERE sunday_id = $1 AND match_number < $2 AND status = 'finished'
+          ORDER BY match_number DESC
+          LIMIT 3
+        `, [matchRow.sunday_id, matchRow.match_number]);
+        const winners = winnersRes.rows.map(r => r.winner_team).filter(w => w === 'black' || w === 'orange');
+        const threeInRow = winners.length >= 3 && winners[0] === winners[1] && winners[1] === winners[2] ? winners[0] : null;
         const blackPrevCounter = Number(prev.team_black_win_streak || 0);
         const orangePrevCounter = Number(prev.team_orange_win_streak || 0);
         const blackPrevDots = blackPrevCounter <= 0 ? 0 : (blackPrevCounter === 1 ? 2 : 3);
@@ -635,14 +660,8 @@ router.post('/:id/participants', [
           const tw = tieRes.rows[0]?.team_scored;
           if (tw === 'black' || tw === 'orange') tieWinner = tw;
         } catch {}
-        if (presentCount > 17) {
-          if (prev.winner_team === 'black' && blackPrevDots === 0) remainTeam = 'black';
-          else if (prev.winner_team === 'orange' && orangePrevDots === 0) remainTeam = 'orange';
-          else remainTeam = null;
-        } else {
-          if (blackPrevDots === 3 && orangePrevDots !== 3) remainTeam = 'orange';
-          else if (orangePrevDots === 3 && blackPrevDots !== 3) remainTeam = 'black';
-          else {
+        if (!threeInRow) {
+          if (applyManyRule && presentCount > 17) {
             if (prev.winner_team === 'black' || prev.winner_team === 'orange') {
               remainTeam = prev.winner_team;
             } else if (prev.winner_team === 'draw') {
@@ -656,10 +675,19 @@ router.post('/:id/participants', [
             } else {
               remainTeam = null;
             }
+          } else {
+            remainTeam = null;
           }
         }
-        nextBlackCounter = remainTeam === 'black' ? Math.min(2, blackPrevCounter + 1) : 0;
-        nextOrangeCounter = remainTeam === 'orange' ? Math.min(2, orangePrevCounter + 1) : 0;
+        const isDrawPrev = prev.winner_team === 'draw';
+        if (isDrawPrev) {
+          const tieWinnerCandidate = (presentCount < 18) && (tieWinner === 'black' || tieWinner === 'orange') ? tieWinner : null;
+          nextBlackCounter = tieWinnerCandidate === 'black' ? 1 : 0;
+          nextOrangeCounter = tieWinnerCandidate === 'orange' ? 1 : 0;
+        } else if (prev.winner_team === 'black' || prev.winner_team === 'orange') {
+          nextBlackCounter = prev.winner_team === 'black' ? Math.min(2, blackPrevCounter + 1) : 0;
+          nextOrangeCounter = prev.winner_team === 'orange' ? Math.min(2, orangePrevCounter + 1) : 0;
+        }
       }
       await query(`UPDATE matches SET team_black_win_streak = $1, team_orange_win_streak = $2 WHERE match_id = $3`, [nextBlackCounter, nextOrangeCounter, id]);
       try { await broadcastTicker(id); } catch {}
@@ -1281,6 +1309,43 @@ router.post('/:id/sync-score', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Erro ao sincronizar placar:', error);
     res.status(500).json({ error: 'Erro ao sincronizar placar' });
+  }
+});
+
+// Ajuste manual das sequências de vitórias (streaks)
+router.post('/:id/win-streak', [
+  requireAdmin,
+  body('black').isInt({ min: 0 }).withMessage('Sequência do preto deve ser inteira e >= 0'),
+  body('orange').isInt({ min: 0 }).withMessage('Sequência do laranja deve ser inteira e >= 0')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        error: 'Erro de validação', 
+        details: errors.array() 
+      });
+    }
+    const { id } = req.params;
+    const black = parseInt(req.body.black, 10);
+    const orange = parseInt(req.body.orange, 10);
+    const mres = await query('SELECT match_id FROM matches WHERE match_id = $1', [id]);
+    if (mres.rows.length === 0) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
+    await query(`
+      UPDATE matches
+      SET 
+        team_black_win_streak = $1,
+        team_orange_win_streak = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE match_id = $3
+    `, [black, orange, id]);
+    try { await broadcastTicker(id); } catch {}
+    return res.json({ message: 'Sequências atualizadas', streak: { black, orange }, match_id: Number(id) });
+  } catch (error) {
+    console.error('Erro ao atualizar sequências:', error);
+    return res.status(500).json({ error: 'Erro ao atualizar sequências' });
   }
 });
 

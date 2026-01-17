@@ -8,10 +8,7 @@ const resolveBaseUrl = () => {
     return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`
   }
   if (typeof window !== 'undefined') {
-    const host = window.location.hostname
-    if (host && host !== 'localhost' && host !== '127.0.0.1') {
-      return '/api'
-    }
+    return '/api'
   }
   return 'http://localhost:3001/api'
 }

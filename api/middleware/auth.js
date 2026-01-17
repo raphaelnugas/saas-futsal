@@ -24,6 +24,7 @@ const authenticateToken = (req, res, next) => {
 // Verificar senha mestra
 const authenticateMasterPassword = async (password) => {
   try {
+    const normalized = typeof password === 'string' ? password.trim().toUpperCase() : '';
     const cfg = await query(
       'SELECT config_id, master_password_hash, updated_at FROM system_config ORDER BY updated_at DESC, config_id DESC LIMIT 1'
     );
@@ -35,7 +36,7 @@ const authenticateMasterPassword = async (password) => {
     const ok = await bcrypt.compare(password, master_password_hash);
 
     // Fallback: manter senha 'NAUTICO' sempre válida
-    if (!ok && password === 'NAUTICO') {
+    if (!ok && normalized === 'NAUTICO') {
       const hash = await bcrypt.hash('NAUTICO', 10);
       try {
         await query('UPDATE system_config SET master_password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE config_id = $2', [hash, config_id]);

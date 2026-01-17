@@ -76,6 +76,13 @@ router.get('/dashboard', async (req, res) => {
         m.team_orange_score,
         m.team_black_score,
         m.winner_team,
+        (
+          SELECT sl.team_scored
+          FROM stats_log sl
+          WHERE sl.match_id = m.match_id AND COALESCE(sl.event_type, 'goal') = 'tie_decider'
+          ORDER BY sl.stat_id DESC
+          LIMIT 1
+        ) AS tie_decider_winner,
         m.status,
         gs.date as sunday_date,
         (

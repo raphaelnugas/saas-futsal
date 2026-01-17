@@ -254,7 +254,7 @@ router.get('/:id/photo', async (req, res) => {
     }
     const etag = `"${crypto.createHash('sha1').update(row.photo_data).digest('hex')}"`;
     res.set('ETag', etag);
-    res.set('Cache-Control', 'public, max-age=604800, must-revalidate');
+    res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
     res.set('Content-Type', row.photo_mime);
     res.send(row.photo_data);
   } catch (error) {
@@ -276,7 +276,7 @@ router.get('/:id/photo2', async (req, res) => {
     }
     const etag = `"${crypto.createHash('sha1').update(row.photo2_data).digest('hex')}"`;
     res.set('ETag', etag);
-    res.set('Cache-Control', 'public, max-age=604800, must-revalidate');
+    res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
     res.set('Content-Type', row.photo2_mime);
     res.send(row.photo2_data);
   } catch (error) {

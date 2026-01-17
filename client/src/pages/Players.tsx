@@ -21,7 +21,23 @@ interface Player {
 }
 
 interface PlayerDetails {
-  player: any
+  player: {
+    name: string
+    is_goalkeeper: boolean
+    photo_url?: string
+    photo_mime?: string
+    photo2_mime?: string
+    attr_ofe?: number
+    attr_def?: number
+    attr_tec?: number
+    attr_for?: number
+    attr_vel?: number
+    attr_pot?: number
+    dominant_foot?: string
+    height_cm?: number
+    birthdate?: string
+    total_assists?: number
+  }
   stats: {
     goals_scored: number
     goals_conceded: number
@@ -94,14 +110,14 @@ const Players: React.FC = () => {
     const d = new Date(yyyy, mm - 1, dd)
     return d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd
   }
-  const toBirthdateStr = (value: any) => {
+  const toBirthdateStr = (value: unknown) => {
     if (!value) return ''
     let iso = ''
     if (typeof value === 'string') {
       iso = value.slice(0, 10)
     } else {
       try {
-        iso = new Date(value).toISOString().slice(0, 10)
+        iso = new Date(value as Date | number | string).toISOString().slice(0, 10)
       } catch {
         return ''
       }
@@ -120,10 +136,23 @@ const Players: React.FC = () => {
     fetchPlayers()
   }, [])
 
+  type PlayerApi = {
+    player_id: number
+    name: string
+    is_goalkeeper: boolean
+    photo_url?: string
+    photo_mime?: string
+    has_photo?: boolean
+    created_at: string
+    total_goals_scored?: number
+    total_games_played?: number
+    total_assists?: number
+  }
+
   const fetchPlayers = async () => {
     try {
       const response = await api.get('/api/players')
-      const list: Player[] = (response.data?.players || []).map((p: any) => ({
+      const list: Player[] = ((response.data?.players || []) as PlayerApi[]).map((p) => ({
         id: p.player_id,
         name: p.name,
         is_goalkeeper: !!p.is_goalkeeper,
@@ -142,7 +171,7 @@ const Players: React.FC = () => {
           if (pl.photo_url) return { id: pl.id, url: pl.photo_url }
           if (!(pl.photo_mime || pl.has_photo)) return { id: pl.id, url: '' }
           try {
-            const res = await api.get(`/api/players/${pl.id}/photo`, { responseType: 'arraybuffer' })
+            const res = await api.get(`/api/players/${pl.id}/photo?v=${Date.now()}`, { responseType: 'arraybuffer' })
             const ct = res.headers['content-type'] || pl.photo_mime || 'image/jpeg'
             const bytes = new Uint8Array(res.data as ArrayBuffer)
             let bin = ''
@@ -156,10 +185,12 @@ const Players: React.FC = () => {
         const map: Record<number, string> = {}
         results.forEach(r => { if (r.url) map[r.id] = r.url })
         setPhotoMap(map)
-      } catch {}
-    } catch (error: any) {
+      } catch { void 0 }
+    } catch (error: unknown) {
       toast.error('Erro ao carregar jogadores')
-      logError('players_load_error', { status: error?.response?.status, message: error?.message })
+      const status = typeof error === 'object' && error && 'response' in error ? (error as { response?: { status?: number } }).response?.status : undefined
+      const message = typeof error === 'object' && error && 'message' in error ? (error as { message?: string }).message : undefined
+      logError('players_load_error', { status, message })
     } finally {
       setLoading(false)
     }
@@ -169,43 +200,47 @@ const Players: React.FC = () => {
     e.preventDefault()
     
     try {
-      const payload: any = { ...formData }
-      if (!payload.photo_url || !payload.photo_url.trim()) {
-        delete payload.photo_url
+      const payload: Record<string, unknown> = { ...formData }
+      const photoUrl = typeof payload['photo_url'] === 'string' ? (payload['photo_url'] as string) : ''
+      if (!photoUrl || photoUrl.trim() === '') {
+        delete payload['photo_url']
       }
-      if (!payload.photo_base64) {
-        delete payload.photo_base64
+      if (!payload['photo_base64']) {
+        delete payload['photo_base64']
       }
-      if (!payload.photo_mime) {
-        delete payload.photo_mime
+      if (!payload['photo_mime']) {
+        delete payload['photo_mime']
       }
-      if (!payload.photo2_base64) {
-        delete payload.photo2_base64
+      if (!payload['photo2_base64']) {
+        delete payload['photo2_base64']
       }
-      if (!payload.photo2_mime) {
-        delete payload.photo2_mime
+      if (!payload['photo2_mime']) {
+        delete payload['photo2_mime']
       }
-      if (payload.remove_photo !== true) {
-        delete payload.remove_photo
+      if (payload['remove_photo'] !== true) {
+        delete payload['remove_photo']
       }
-      if (payload.remove_photo2 !== true) {
-        delete payload.remove_photo2
+      if (payload['remove_photo2'] !== true) {
+        delete payload['remove_photo2']
       }
-      if (!payload.dominant_foot || !String(payload.dominant_foot).trim()) {
-        delete payload.dominant_foot
+      const dominant = typeof payload['dominant_foot'] === 'string' ? (payload['dominant_foot'] as string).trim() : ''
+      if (!dominant) {
+        delete payload['dominant_foot']
+      } else {
+        payload['dominant_foot'] = dominant
       }
-      if (payload.height_cm) {
-        const num = parseInt(String(payload.height_cm), 10)
+      if (payload['height_cm'] !== undefined && payload['height_cm'] !== null) {
+        const num = parseInt(String(payload['height_cm']), 10)
         if (isNaN(num)) {
-          delete payload.height_cm
+          delete payload['height_cm']
         } else {
-          payload.height_cm = num
+          payload['height_cm'] = num
         }
       } else {
-        delete payload.height_cm
+        delete payload['height_cm']
       }
-      if (payload.birthdate_str) {
-        const s = String(payload.birthdate_str).trim()
+      if (payload['birthdate_str']) {
+        const s = String(payload['birthdate_str']).trim()
         const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
         if (m) {
           const dd = parseInt(m[1], 10)
@@ -231,9 +266,11 @@ const Players: React.FC = () => {
       setEditingPlayer(null)
       setFormData({ name: '', photo_url: '', is_goalkeeper: false, photo_base64: '', photo_mime: '', photo2_base64: '', photo2_mime: '', remove_photo: false, remove_photo2: false, dominant_foot: '', height_cm: '', birthdate_str: '' })
       fetchPlayers()
-    } catch (error) {
-      const err = error as any
-      const msg = err?.response?.data?.message || err?.response?.data?.error || 'Erro ao salvar jogador'
+    } catch (error: unknown) {
+      const msg =
+        (typeof error === 'object' && error && 'response' in error && (error as { response?: { data?: Record<string, unknown> } }).response?.data?.message as string) ||
+        (typeof error === 'object' && error && 'response' in error && (error as { response?: { data?: Record<string, unknown> } }).response?.data?.error as string) ||
+        'Erro ao salvar jogador'
       toast.error(msg)
     }
   }
@@ -306,7 +343,7 @@ const Players: React.FC = () => {
           for (let i = 0; i < bytes2.length; i++) bin2 += String.fromCharCode(bytes2[i])
           const base642 = btoa(bin2)
           setDetailsPhotoUrl(`data:${ct2};base64,${base642}`)
-        } catch {}
+        } catch { void 0 }
       } else if (hasPhoto1) {
         try {
           const photoRes = await api.get(`/api/players/${playerId}/photo?v=${Date.now()}`, { responseType: 'arraybuffer' })
@@ -316,7 +353,7 @@ const Players: React.FC = () => {
           for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
           const base64 = btoa(bin)
           setDetailsPhotoUrl(`data:${ct};base64,${base64}`)
-        } catch {}
+        } catch { void 0 }
       } else if (directUrl) {
         setDetailsPhotoUrl(directUrl)
       }
@@ -489,8 +526,8 @@ const Players: React.FC = () => {
                     <div className="text-gray-900 font-semibold">{details.stats.goals_scored}</div>
                   </div>
                   <div>
-                    <div className="text-gray-500">Sofridos</div>
-                    <div className="text-gray-900 font-semibold">{details.stats.goals_conceded}</div>
+                    <div className="text-gray-500">Assistências</div>
+                    <div className="text-gray-900 font-semibold">{Number(details.player.total_assists || 0)}</div>
                   </div>
                   <div>
                     <div className="text-gray-500">Vitórias</div>
@@ -501,12 +538,12 @@ const Players: React.FC = () => {
                     <div className="text-gray-900 font-semibold">{details.stats.draws}</div>
                   </div>
                   <div>
-                    <div className="text-gray-500">Derrotas</div>
-                    <div className="text-gray-900 font-semibold">{details.stats.losses}</div>
-                  </div>
-                  <div>
                     <div className="text-gray-500">Partidas</div>
                     <div className="text-gray-900 font-semibold">{details.stats.matches}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500">Gols Sofridos</div>
+                    <div className="text-gray-900 font-semibold">{details.stats.goals_conceded}</div>
                   </div>
                   <div>
                     <div className="text-gray-500">Domingos</div>
@@ -623,7 +660,7 @@ const Players: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        setFormData({ ...formData, photo_base64: '', photo_mime: '', remove_photo: true as any })
+                        setFormData({ ...formData, photo_base64: '', photo_mime: '', remove_photo: true })
                         toast.info('Foto principal será removida ao salvar')
                       }}
                       className="px-3 py-1.5 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100"
@@ -673,7 +710,7 @@ const Players: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        setFormData({ ...formData, photo2_base64: '', photo2_mime: '', remove_photo2: true as any })
+                        setFormData({ ...formData, photo2_base64: '', photo2_mime: '', remove_photo2: true })
                         toast.info('Foto detalhada será removida ao salvar')
                       }}
                       className="px-3 py-1.5 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100"

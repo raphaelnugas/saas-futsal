@@ -25,10 +25,11 @@ router.post('/login', [
     // Verificar senha com prioridade: MASTERNAUTICO (admin) > NAUTICO (usuário) > banco (admin)
     let role = 'user';
     let isValid = false;
-    if (password === 'MASTERNAUTICO') {
+    const norm = typeof password === 'string' ? password.trim().toUpperCase() : '';
+    if (norm === 'MASTERNAUTICO') {
       isValid = true;
       role = 'admin';
-    } else if (password === 'NAUTICO') {
+    } else if (norm === 'NAUTICO') {
       isValid = true;
       role = 'user';
     } else {

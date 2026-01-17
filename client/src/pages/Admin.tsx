@@ -80,6 +80,7 @@ const Admin: React.FC = () => {
   const [summaryAttendees, setSummaryAttendees] = useState<{ player_id: number; name: string }[]>([])
   const [summaryInputs, setSummaryInputs] = useState<Record<number, { goals: string; assists: string }>>({})
   const [summaryLoading, setSummaryLoading] = useState(false)
+  const [craqueId, setCraqueId] = useState<number | null>(null)
 
   useEffect(() => {
     loadPlayers()
@@ -354,6 +355,8 @@ const Admin: React.FC = () => {
       try {
         const respSunday = await api.get(`/api/sundays/${selectedSundayId}`)
         const matches = Array.isArray(respSunday.data?.sunday?.matches) ? respSunday.data.sunday.matches as Array<{ match_id: number; match_number: number }> : []
+        const craque = respSunday.data?.sunday?.craque_player_id
+        setCraqueId(Number.isFinite(Number(craque)) && Number(craque) > 0 ? Number(craque) : null)
         const summaryMatch = matches.find(m => Number(m.match_number) === 0)
         if (summaryMatch) {
           const statsResp = await api.get(`/api/matches/${summaryMatch.match_id}/stats`)
@@ -399,6 +402,10 @@ const Admin: React.FC = () => {
           setSummaryInputs(next)
         }
       }
+      {
+        const presentIds = new Set(list.map(a => a.player_id))
+        setCraqueId(prev => (prev !== null && presentIds.has(prev) ? prev : null))
+      }
       setSummaryModalOpen(true)
     } catch {
       toast.error('Erro ao abrir súmula')
@@ -416,12 +423,15 @@ const Admin: React.FC = () => {
         const s = Number.isFinite(rawS) ? Math.max(0, Math.floor(rawS)) : 0
         return { player_id: a.player_id, goals: g, assists: s }
       })
-      await api.post(`/api/sundays/${selectedSundayId}/summary-set`, { entries })
+      await api.post(`/api/sundays/${selectedSundayId}/summary-set`, { entries, craque_player_id: craqueId || null })
       toast.success('Súmula atualizada')
       setSummaryModalOpen(false)
       await loadPlayers()
-    } catch {
-      toast.error('Erro ao atualizar súmula')
+    } catch (err: unknown) {
+      const msg = typeof err === 'object' && err && 'response' in err
+        ? (err as { response?: { data?: { error?: string; message?: string } } }).response?.data?.error || (err as { response?: { data?: { error?: string; message?: string } } }).response?.data?.message || 'Erro ao atualizar súmula'
+        : 'Erro ao atualizar súmula'
+      toast.error(msg)
     }
   }
   return (
@@ -590,35 +600,60 @@ const Admin: React.FC = () => {
       </section>
       {summaryModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md summary-modal">
+            <style>{`
+              .summary-modal input[type="number"]::-webkit-outer-spin-button,
+              .summary-modal input[type="number"]::-webkit-inner-spin-button {
+                -webkit-appearance: none;
+                margin: 0;
+              }
+              .summary-modal input[type="number"] {
+                -moz-appearance: textfield;
+                appearance: textfield;
+              }
+            `}</style>
             <h3 className="text-lg font-semibold mb-4">Editar Súmula em Lote</h3>
             {summaryLoading ? (
               <div className="text-sm text-gray-600">Carregando…</div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-auto">
+                <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 pb-2 place-items-center">
+                  <div className="text-center">Jogador</div>
+                  <div className="text-center">Gols</div>
+                  <div className="text-center">Assistências</div>
+                  <div className="text-center">Craque</div>
+                </div>
                 {summaryAttendees.map(a => (
-                  <div key={a.player_id} className="grid grid-cols-3 gap-2 items-end">
-                    <div className="text-sm text-gray-700">{a.name}</div>
-                    <div>
-                      <label className="block text-xs text-gray-600">Gols</label>
+                  <div key={a.player_id} className="py-2 grid grid-cols-4 gap-2 items-center place-items-center">
+                    <div className="text-sm text-gray-700 truncate text-center" title={a.name}>{a.name}</div>
+                    <div className="text-center">
                       <input
                         type="number"
                         min={0}
                         step={1}
                         value={summaryInputs[a.player_id]?.goals ?? ''}
                         onChange={(e) => setSummaryInputs(prev => ({ ...prev, [a.player_id]: { goals: e.target.value, assists: prev[a.player_id]?.assists ?? '' } }))}
-                        className="mt-1 block w-full border-gray-300 rounded-md"
+                        className="mx-auto w-20 border-gray-300 rounded-md text-center"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs text-gray-600">Assistências</label>
+                    <div className="text-center">
                       <input
                         type="number"
                         min={0}
                         step={1}
                         value={summaryInputs[a.player_id]?.assists ?? ''}
                         onChange={(e) => setSummaryInputs(prev => ({ ...prev, [a.player_id]: { goals: prev[a.player_id]?.goals ?? '', assists: e.target.value } }))}
-                        className="mt-1 block w-full border-gray-300 rounded-md"
+                        className="mx-auto w-20 border-gray-300 rounded-md text-center"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <input
+                        type="radio"
+                        name="summary_craque"
+                        checked={craqueId === a.player_id}
+                        onChange={() => setCraqueId(a.player_id)}
+                        className="h-4 w-4 text-red-600 border-gray-300"
+                        title="Selecionar craque do domingo"
                       />
                     </div>
                   </div>

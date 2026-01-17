@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Plus, Calendar, Users, CheckCircle, XCircle, Clock, Trash2, BookOpen } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
+import FifaPlayerCard from '../components/FifaPlayerCard'
 
 interface Player {
   id: number
@@ -16,6 +17,7 @@ interface Sunday {
   status: 'scheduled' | 'in_progress' | 'completed'
   total_players: number
   created_at: string
+  craque_player_id?: number | null
 }
 
 interface Attendance {
@@ -30,6 +32,7 @@ type ApiSundayRow = {
   total_attendees?: number
   total_matches?: number
   created_at: string
+  craque_player_id?: number | null
 }
 
 type ApiPlayerRow = {
@@ -74,6 +77,17 @@ const Sundays: React.FC = () => {
   const [summaryRows, setSummaryRows] = useState<Array<{ player_id: number; name: string; goals: number; assists: number }>>([])
   const [summaryTotals, setSummaryTotals] = useState<{ goals: number; assists: number }>({ goals: 0, assists: 0 })
   const [summaryLoading, setSummaryLoading] = useState(false)
+  const [craquePhotos, setCraquePhotos] = useState<Record<number, string>>({})
+  const [craqueModalOpen, setCraqueModalOpen] = useState(false)
+  const [craqueDetails, setCraqueDetails] = useState<{
+    name: string
+    overall: number
+    role: string
+    photo2Url?: string
+    badgeUrl?: string
+    stats: { ofe: number; def: number; tec: number; for: number; vel: number; pot: number }
+    templateUrl: string
+  } | null>(null)
 
   useEffect(() => {
     fetchData()
@@ -97,7 +111,8 @@ const Sundays: React.FC = () => {
           sunday_date: s.date,
           status,
           total_players: Number(s.total_attendees || 0),
-          created_at: s.created_at
+          created_at: s.created_at,
+          craque_player_id: s.craque_player_id || null
         }
       })
       const apiPlayers = (playersResponse.data?.players || []) as ApiPlayerRow[]
@@ -108,6 +123,22 @@ const Sundays: React.FC = () => {
       }))
       setSundays(sundaysList)
       setPlayers(playersList)
+      const withCraque = sundaysList.filter(s => Number.isFinite(Number(s.craque_player_id)) && Number(s.craque_player_id) > 0)
+      if (withCraque.length) {
+        const updates: Record<number, string> = {}
+        await Promise.all(withCraque.map(async (s) => {
+          try {
+            const resp = await api.get(`/api/players/${s.craque_player_id}/photo`, { responseType: 'arraybuffer' })
+            const mime = resp.headers['content-type'] || 'image/jpeg'
+            const bytes = new Uint8Array(resp.data as ArrayBuffer)
+            let bin = ''
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+            const base64 = btoa(bin)
+            updates[s.id] = `data:${mime};base64,${base64}`
+          } catch { /* ignore */ }
+        }))
+        setCraquePhotos(prev => ({ ...prev, ...updates }))
+      }
     } catch (error: unknown) {
       toast.error('Erro ao carregar dados')
       const status = typeof error === 'object' && error && 'response' in error
@@ -119,6 +150,71 @@ const Sundays: React.FC = () => {
       logError('sundays_load_error', { status, message })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const openCraqueModal = async (playerId?: number | null) => {
+    if (!playerId) return
+    try {
+      const playerResp = await api.get(`/api/players/${playerId}`)
+      const p = playerResp.data?.player
+      if (!p) {
+        toast.error('Jogador não encontrado')
+        return
+      }
+      let photo2Url = ''
+      try {
+        const photo2Resp = await api.get(`/api/players/${playerId}/photo2`, { responseType: 'arraybuffer' })
+        const mime = photo2Resp.headers['content-type'] || 'image/jpeg'
+        const bytes = new Uint8Array(photo2Resp.data as ArrayBuffer)
+        let bin = ''
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+        const base64 = btoa(bin)
+        photo2Url = `data:${mime};base64,${base64}`
+      } catch { photo2Url = '' }
+      let templateUrl = ''
+      try {
+        const goldResp = await api.get('/api/assets/card-gold', { responseType: 'arraybuffer' })
+        const mime = goldResp.headers['content-type'] || 'image/png'
+        const bytes = new Uint8Array(goldResp.data as ArrayBuffer)
+        let bin = ''
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+        const base64 = btoa(bin)
+        templateUrl = `data:${mime};base64,${base64}`
+      } catch { templateUrl = '' }
+      let badgeUrl = ''
+      try {
+        const badgeResp = await api.get('/api/assets/craque-badge', { responseType: 'arraybuffer' })
+        const mime = badgeResp.headers['content-type'] || 'image/png'
+        const bytes = new Uint8Array(badgeResp.data as ArrayBuffer)
+        let bin = ''
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+        const base64 = btoa(bin)
+        badgeUrl = `data:${mime};base64,${base64}`
+      } catch { badgeUrl = '' }
+      const role = p.is_goalkeeper ? 'GOLEIRO' : 'LINHA'
+      const overall = Math.round(
+        ((Number(p.attr_ofe || 50) + Number(p.attr_def || 50) + Number(p.attr_vel || 50) + Number(p.attr_tec || 50) + Number(p.attr_for || 50) + Number(p.attr_pot || 50)) / 6)
+      )
+      setCraqueDetails({
+        name: String(p.name || ''),
+        overall,
+        role,
+        photo2Url,
+        badgeUrl,
+        templateUrl,
+        stats: {
+          ofe: Number(p.attr_ofe || 50),
+          def: Number(p.attr_def || 50),
+          tec: Number(p.attr_tec || 50),
+          for: Number(p.attr_for || 50),
+          vel: Number(p.attr_vel || 50),
+          pot: Number(p.attr_pot || 50),
+        }
+      })
+      setCraqueModalOpen(true)
+    } catch {
+      toast.error('Erro ao carregar craque do domingo')
     }
   }
 
@@ -353,6 +449,29 @@ const Sundays: React.FC = () => {
                 <Clock className="w-4 h-4 mr-2" />
                 <span>Criado em {new Date(sunday.created_at).toLocaleDateString('pt-BR')}</span>
               </div>
+
+              {Number.isFinite(Number(sunday.craque_player_id)) && Number(sunday.craque_player_id) > 0 ? (
+                <div className="mt-2 border-2 border-red-600 bg-red-50 rounded-lg p-3">
+                  <div className="flex flex-col items-center">
+                    <button
+                      onClick={() => openCraqueModal(sunday.craque_player_id)}
+                      className="relative"
+                      title="Ver craque do domingo"
+                    >
+                      {craquePhotos[sunday.id] ? (
+                        <img
+                          src={craquePhotos[sunday.id]}
+                          alt="Craque do Domingo"
+                          className="w-24 h-24 object-cover rounded-md shadow"
+                        />
+                      ) : (
+                        <div className="w-24 h-24 bg-red-100 rounded-md" />
+                      )}
+                    </button>
+                    <span className="mt-1 text-xs font-bold text-red-700 uppercase tracking-wide">Craque</span>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-4 flex space-x-2">
@@ -607,11 +726,17 @@ const Sundays: React.FC = () => {
                       <div className="text-sm text-gray-700">
                         Total — Gols: <span className="font-semibold">{summaryTotals.goals}</span> • Assistências: <span className="font-semibold">{summaryTotals.assists}</span>
                       </div>
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 pb-2">
+                        <div>Jogador</div>
+                        <div>Gols</div>
+                        <div>Assistências</div>
+                      </div>
                       <div className="divide-y">
                         {summaryRows.map(r => (
-                          <div key={r.player_id} className="py-2 flex items-center justify-between">
-                            <div className="text-sm text-gray-800">{r.name}</div>
-                            <div className="text-sm text-gray-600">Gols: <span className="font-semibold">{r.goals}</span> • Assistências: <span className="font-semibold">{r.assists}</span></div>
+                          <div key={r.player_id} className="py-2 grid grid-cols-3 gap-2 text-center items-center">
+                            <div className="text-sm text-gray-800 truncate" title={r.name}>{r.name}</div>
+                            <div className="text-sm text-gray-800 tabular-nums font-semibold">{r.goals}</div>
+                            <div className="text-sm text-gray-800 tabular-nums font-semibold">{r.assists}</div>
                           </div>
                         ))}
                       </div>
@@ -619,6 +744,37 @@ const Sundays: React.FC = () => {
                   )}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {craqueModalOpen && craqueDetails && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-4 relative">
+            {craqueDetails.badgeUrl ? (
+              <img
+                src={craqueDetails.badgeUrl}
+                alt="Craque do Domingo"
+                className="absolute top-[-17px] right-[-17px] w-[12.8rem] h-[12.8rem] object-contain transform rotate-12 drop-shadow z-50 pointer-events-none"
+              />
+            ) : null}
+            <FifaPlayerCard
+              name={craqueDetails.name}
+              overall={craqueDetails.overall}
+              role={craqueDetails.role}
+              photoUrl={craqueDetails.photo2Url}
+              stats={craqueDetails.stats}
+              templateUrl={craqueDetails.templateUrl}
+              className="w-full"
+            />
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={() => { setCraqueModalOpen(false); setCraqueDetails(null) }}
+                className="px-3 py-1.5 rounded-md bg-gray-200 text-gray-700 text-sm"
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>

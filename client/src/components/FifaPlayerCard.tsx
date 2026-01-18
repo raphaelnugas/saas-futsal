@@ -32,7 +32,7 @@ const FifaPlayerCard: React.FC<FifaPlayerCardProps> = ({ name, overall, role, ph
         className="relative w-full aspect-[500/708] bg-no-repeat bg-center bg-cover shadow-xl mx-auto rounded-md"
         style={{ backgroundImage: `url(${templateUrl})` }}
       >
-        <div className="absolute top-[78px] left-[62px] flex flex-col items-center text-[#3c3222]">
+        <div className="absolute top-[64px] left-[48px] flex flex-col items-center text-[#3c3222]">
           <span className="text-4xl font-extrabold leading-none">{overall}</span>
           <span className="text-xs font-bold uppercase">{role}</span>
         </div>

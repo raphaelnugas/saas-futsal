@@ -1,0 +1,1854 @@
+{
+  "sunday": {
+    "sunday_id": 12,
+    "date": "2026-01-11T00:00:00.000Z",
+    "master_password_hash": null,
+    "created_at": "2026-01-04T14:09:03.718Z",
+    "craque_player_id": 23
+  },
+  "attendances": [
+    {
+      "attendance_id": 194,
+      "sunday_id": 12,
+      "player_id": 33,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 1,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 196,
+      "sunday_id": 12,
+      "player_id": 29,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 2,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 200,
+      "sunday_id": 12,
+      "player_id": 23,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 3,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 205,
+      "sunday_id": 12,
+      "player_id": 21,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 4,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 216,
+      "sunday_id": 12,
+      "player_id": 46,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 5,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 223,
+      "sunday_id": 12,
+      "player_id": 35,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 6,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 224,
+      "sunday_id": 12,
+      "player_id": 24,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 7,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 225,
+      "sunday_id": 12,
+      "player_id": 43,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 8,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 226,
+      "sunday_id": 12,
+      "player_id": 32,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 9,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 227,
+      "sunday_id": 12,
+      "player_id": 38,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 10,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 228,
+      "sunday_id": 12,
+      "player_id": 25,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 11,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 229,
+      "sunday_id": 12,
+      "player_id": 36,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 12,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 243,
+      "sunday_id": 12,
+      "player_id": 34,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 13,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 244,
+      "sunday_id": 12,
+      "player_id": 39,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 14,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 245,
+      "sunday_id": 12,
+      "player_id": 41,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 15,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 246,
+      "sunday_id": 12,
+      "player_id": 26,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 16,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 247,
+      "sunday_id": 12,
+      "player_id": 48,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 17,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 248,
+      "sunday_id": 12,
+      "player_id": 50,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 18,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 249,
+      "sunday_id": 12,
+      "player_id": 44,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 19,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 289,
+      "sunday_id": 12,
+      "player_id": 40,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": true,
+      "arrival_order": 20,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 290,
+      "sunday_id": 12,
+      "player_id": 22,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": false,
+      "arrival_order": null,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    },
+    {
+      "attendance_id": 195,
+      "sunday_id": 12,
+      "player_id": 30,
+      "guest_name": null,
+      "guest_photo_url": null,
+      "is_present": false,
+      "arrival_order": null,
+      "created_at": "2026-01-17T17:10:29.367Z"
+    }
+  ],
+  "matches": [
+    {
+      "match_id": 128,
+      "sunday_id": 12,
+      "match_number": 0,
+      "start_time": "2026-01-17T17:05:03.814Z",
+      "end_time": "2026-01-17T17:05:03.814Z",
+      "team_orange_score": 0,
+      "team_black_score": 0,
+      "team_orange_win_streak": 0,
+      "team_black_win_streak": 0,
+      "winner_team": "draw",
+      "status": "finished",
+      "created_at": "2026-01-17T17:05:03.814Z",
+      "updated_at": "2026-01-17T17:05:03.814Z"
+    },
+    {
+      "match_id": 122,
+      "sunday_id": 12,
+      "match_number": 1,
+      "start_time": "2026-01-11T10:28:16.513Z",
+      "end_time": "2026-01-11T10:40:45.054Z",
+      "team_orange_score": 1,
+      "team_black_score": 3,
+      "team_orange_win_streak": 0,
+      "team_black_win_streak": 0,
+      "winner_team": "black",
+      "status": "finished",
+      "created_at": "2026-01-11T10:28:16.251Z",
+      "updated_at": "2026-01-11T10:40:45.054Z"
+    },
+    {
+      "match_id": 123,
+      "sunday_id": 12,
+      "match_number": 2,
+      "start_time": "2026-01-11T10:43:50.147Z",
+      "end_time": "2026-01-11T10:53:16.746Z",
+      "team_orange_score": 1,
+      "team_black_score": 2,
+      "team_orange_win_streak": 0,
+      "team_black_win_streak": 1,
+      "winner_team": "black",
+      "status": "finished",
+      "created_at": "2026-01-11T10:43:49.884Z",
+      "updated_at": "2026-01-11T10:53:16.746Z"
+    },
+    {
+      "match_id": 125,
+      "sunday_id": 12,
+      "match_number": 4,
+      "start_time": "2026-01-11T10:54:01.473Z",
+      "end_time": "2026-01-11T11:05:19.512Z",
+      "team_orange_score": 1,
+      "team_black_score": 2,
+      "team_orange_win_streak": 0,
+      "team_black_win_streak": 0,
+      "winner_team": "black",
+      "status": "finished",
+      "created_at": "2026-01-11T10:54:01.225Z",
+      "updated_at": "2026-01-11T11:05:19.512Z"
+    },
+    {
+      "match_id": 126,
+      "sunday_id": 12,
+      "match_number": 5,
+      "start_time": "2026-01-11T11:07:28.258Z",
+      "end_time": "2026-01-11T11:19:11.195Z",
+      "team_orange_score": 1,
+      "team_black_score": 1,
+      "team_orange_win_streak": 0,
+      "team_black_win_streak": 1,
+      "winner_team": "draw",
+      "status": "finished",
+      "created_at": "2026-01-11T11:07:27.817Z",
+      "updated_at": "2026-01-11T11:19:11.195Z"
+    }
+  ],
+  "participants": [
+    {
+      "participant_id": 1370,
+      "match_id": 122,
+      "player_id": 23,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1368,
+      "match_id": 122,
+      "player_id": 25,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1366,
+      "match_id": 122,
+      "player_id": 33,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1367,
+      "match_id": 122,
+      "player_id": 35,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1369,
+      "match_id": 122,
+      "player_id": 46,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1363,
+      "match_id": 122,
+      "player_id": 21,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1365,
+      "match_id": 122,
+      "player_id": 26,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1361,
+      "match_id": 122,
+      "player_id": 29,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1362,
+      "match_id": 122,
+      "player_id": 34,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1364,
+      "match_id": 122,
+      "player_id": 43,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:28:16.513Z"
+    },
+    {
+      "participant_id": 1390,
+      "match_id": 123,
+      "player_id": 23,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1388,
+      "match_id": 123,
+      "player_id": 25,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1387,
+      "match_id": 123,
+      "player_id": 35,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1389,
+      "match_id": 123,
+      "player_id": 46,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1386,
+      "match_id": 123,
+      "player_id": 48,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1381,
+      "match_id": 123,
+      "player_id": 21,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1384,
+      "match_id": 123,
+      "player_id": 24,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1382,
+      "match_id": 123,
+      "player_id": 33,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1385,
+      "match_id": 123,
+      "player_id": 44,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1383,
+      "match_id": 123,
+      "player_id": 50,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:44:55.551Z"
+    },
+    {
+      "participant_id": 1410,
+      "match_id": 125,
+      "player_id": 23,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1407,
+      "match_id": 125,
+      "player_id": 25,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1406,
+      "match_id": 125,
+      "player_id": 35,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1409,
+      "match_id": 125,
+      "player_id": 46,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1408,
+      "match_id": 125,
+      "player_id": 48,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1405,
+      "match_id": 125,
+      "player_id": 26,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1401,
+      "match_id": 125,
+      "player_id": 29,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1402,
+      "match_id": 125,
+      "player_id": 34,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1403,
+      "match_id": 125,
+      "player_id": 39,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1404,
+      "match_id": 125,
+      "player_id": 41,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T10:54:01.473Z"
+    },
+    {
+      "participant_id": 1468,
+      "match_id": 126,
+      "player_id": 29,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1466,
+      "match_id": 126,
+      "player_id": 33,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1469,
+      "match_id": 126,
+      "player_id": 36,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1467,
+      "match_id": 126,
+      "player_id": 43,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1470,
+      "match_id": 126,
+      "player_id": 48,
+      "guest_name_snapshot": null,
+      "team": "black",
+      "is_goalkeeper": true,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1463,
+      "match_id": 126,
+      "player_id": 21,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1465,
+      "match_id": 126,
+      "player_id": 24,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1461,
+      "match_id": 126,
+      "player_id": 40,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1462,
+      "match_id": 126,
+      "player_id": 44,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    },
+    {
+      "participant_id": 1464,
+      "match_id": 126,
+      "player_id": 50,
+      "guest_name_snapshot": null,
+      "team": "orange",
+      "is_goalkeeper": false,
+      "created_at": "2026-01-11T11:18:57.865Z"
+    }
+  ],
+  "stats_log": [
+    {
+      "stat_id": 317,
+      "match_id": 122,
+      "player_scorer_id": 35,
+      "player_assist_id": 33,
+      "team_scored": "black",
+      "goal_minute": 1,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:29:41.937Z"
+    },
+    {
+      "stat_id": 318,
+      "match_id": 122,
+      "player_scorer_id": 23,
+      "player_assist_id": 46,
+      "team_scored": "black",
+      "goal_minute": 5,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:36:50.156Z"
+    },
+    {
+      "stat_id": 319,
+      "match_id": 122,
+      "player_scorer_id": 35,
+      "player_assist_id": 23,
+      "team_scored": "black",
+      "goal_minute": 10,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:38:53.236Z"
+    },
+    {
+      "stat_id": 321,
+      "match_id": 122,
+      "player_scorer_id": 43,
+      "player_assist_id": 26,
+      "team_scored": "orange",
+      "goal_minute": 11,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:39:51.052Z"
+    },
+    {
+      "stat_id": 323,
+      "match_id": 123,
+      "player_scorer_id": 48,
+      "player_assist_id": 33,
+      "team_scored": "black",
+      "goal_minute": 1,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T10:44:54.979Z"
+    },
+    {
+      "stat_id": 324,
+      "match_id": 123,
+      "player_scorer_id": 33,
+      "player_assist_id": 48,
+      "team_scored": "orange",
+      "goal_minute": 1,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T10:44:55.285Z"
+    },
+    {
+      "stat_id": 325,
+      "match_id": 123,
+      "player_scorer_id": 23,
+      "player_assist_id": 46,
+      "team_scored": "black",
+      "goal_minute": 1,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:45:07.306Z"
+    },
+    {
+      "stat_id": 326,
+      "match_id": 123,
+      "player_scorer_id": 24,
+      "player_assist_id": 33,
+      "team_scored": "orange",
+      "goal_minute": 1,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:45:36.973Z"
+    },
+    {
+      "stat_id": 327,
+      "match_id": 123,
+      "player_scorer_id": 25,
+      "player_assist_id": 46,
+      "team_scored": "black",
+      "goal_minute": 6,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:50:30.608Z"
+    },
+    {
+      "stat_id": 328,
+      "match_id": 125,
+      "player_scorer_id": 23,
+      "player_assist_id": 35,
+      "team_scored": "black",
+      "goal_minute": 3,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T10:57:48.266Z"
+    },
+    {
+      "stat_id": 329,
+      "match_id": 125,
+      "player_scorer_id": 46,
+      "player_assist_id": 25,
+      "team_scored": "black",
+      "goal_minute": 6,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T11:00:49.530Z"
+    },
+    {
+      "stat_id": 330,
+      "match_id": 125,
+      "player_scorer_id": 41,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": 7,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T11:01:19.366Z"
+    },
+    {
+      "stat_id": 334,
+      "match_id": 126,
+      "player_scorer_id": 29,
+      "player_assist_id": 48,
+      "team_scored": "black",
+      "goal_minute": 9,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:17:08.500Z"
+    },
+    {
+      "stat_id": 335,
+      "match_id": 126,
+      "player_scorer_id": 29,
+      "player_assist_id": 48,
+      "team_scored": "black",
+      "goal_minute": 9,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:17:14.856Z"
+    },
+    {
+      "stat_id": 336,
+      "match_id": 126,
+      "player_scorer_id": 48,
+      "player_assist_id": 29,
+      "team_scored": "orange",
+      "goal_minute": 9,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:17:14.902Z"
+    },
+    {
+      "stat_id": 337,
+      "match_id": 126,
+      "player_scorer_id": 48,
+      "player_assist_id": 29,
+      "team_scored": "orange",
+      "goal_minute": 9,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:17:15.147Z"
+    },
+    {
+      "stat_id": 338,
+      "match_id": 126,
+      "player_scorer_id": 36,
+      "player_assist_id": null,
+      "team_scored": "black",
+      "goal_minute": 9,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T11:17:23.577Z"
+    },
+    {
+      "stat_id": 339,
+      "match_id": 126,
+      "player_scorer_id": 26,
+      "player_assist_id": 29,
+      "team_scored": "black",
+      "goal_minute": 10,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:17:59.285Z"
+    },
+    {
+      "stat_id": 340,
+      "match_id": 126,
+      "player_scorer_id": 29,
+      "player_assist_id": 26,
+      "team_scored": "black",
+      "goal_minute": 10,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:18:18.401Z"
+    },
+    {
+      "stat_id": 341,
+      "match_id": 126,
+      "player_scorer_id": 48,
+      "player_assist_id": 44,
+      "team_scored": "black",
+      "goal_minute": 11,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:18:57.307Z"
+    },
+    {
+      "stat_id": 342,
+      "match_id": 126,
+      "player_scorer_id": 44,
+      "player_assist_id": 48,
+      "team_scored": "orange",
+      "goal_minute": 11,
+      "is_own_goal": false,
+      "event_type": "substitution",
+      "created_at": "2026-01-11T11:18:57.604Z"
+    },
+    {
+      "stat_id": 343,
+      "match_id": 126,
+      "player_scorer_id": 44,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": 11,
+      "is_own_goal": false,
+      "event_type": "goal",
+      "created_at": "2026-01-11T11:19:08.207Z"
+    },
+    {
+      "stat_id": 344,
+      "match_id": 126,
+      "player_scorer_id": null,
+      "player_assist_id": null,
+      "team_scored": "black",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "tie_decider",
+      "created_at": "2026-01-11T11:19:36.488Z"
+    },
+    {
+      "stat_id": 420,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 421,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 422,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 423,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 424,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 425,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 426,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 427,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 428,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 429,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 430,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 431,
+      "match_id": 128,
+      "player_scorer_id": 23,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 432,
+      "match_id": 128,
+      "player_scorer_id": 21,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 433,
+      "match_id": 128,
+      "player_scorer_id": 21,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 434,
+      "match_id": 128,
+      "player_scorer_id": 46,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 435,
+      "match_id": 128,
+      "player_scorer_id": 46,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 436,
+      "match_id": 128,
+      "player_scorer_id": 46,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 437,
+      "match_id": 128,
+      "player_scorer_id": 46,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 438,
+      "match_id": 128,
+      "player_scorer_id": 46,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 439,
+      "match_id": 128,
+      "player_scorer_id": 46,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 440,
+      "match_id": 128,
+      "player_scorer_id": 35,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 441,
+      "match_id": 128,
+      "player_scorer_id": 35,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 442,
+      "match_id": 128,
+      "player_scorer_id": 35,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 443,
+      "match_id": 128,
+      "player_scorer_id": 35,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 444,
+      "match_id": 128,
+      "player_scorer_id": 35,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 445,
+      "match_id": 128,
+      "player_scorer_id": 35,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 446,
+      "match_id": 128,
+      "player_scorer_id": 24,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 447,
+      "match_id": 128,
+      "player_scorer_id": 43,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 448,
+      "match_id": 128,
+      "player_scorer_id": 43,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 449,
+      "match_id": 128,
+      "player_scorer_id": 43,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 450,
+      "match_id": 128,
+      "player_scorer_id": 43,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 451,
+      "match_id": 128,
+      "player_scorer_id": 43,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 452,
+      "match_id": 128,
+      "player_scorer_id": 43,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 453,
+      "match_id": 128,
+      "player_scorer_id": 43,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 454,
+      "match_id": 128,
+      "player_scorer_id": 25,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 455,
+      "match_id": 128,
+      "player_scorer_id": 34,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 456,
+      "match_id": 128,
+      "player_scorer_id": 39,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 457,
+      "match_id": 128,
+      "player_scorer_id": 39,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 458,
+      "match_id": 128,
+      "player_scorer_id": 39,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 459,
+      "match_id": 128,
+      "player_scorer_id": 41,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 460,
+      "match_id": 128,
+      "player_scorer_id": 44,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 461,
+      "match_id": 128,
+      "player_scorer_id": 44,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 462,
+      "match_id": 128,
+      "player_scorer_id": 44,
+      "player_assist_id": null,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 463,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 33,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 464,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 23,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 465,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 23,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 466,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 23,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 467,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 23,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 468,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 21,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 469,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 470,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 471,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 472,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 473,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 474,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 475,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 476,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 46,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 477,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 35,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 478,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 24,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 479,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 43,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 480,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 43,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 481,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 43,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 482,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 43,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 483,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 43,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 484,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 25,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 485,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 36,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 486,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 36,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 487,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 36,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 488,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 36,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 489,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 36,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 490,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 36,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 491,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 34,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 492,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 34,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 493,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 34,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 494,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 41,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    },
+    {
+      "stat_id": 495,
+      "match_id": 128,
+      "player_scorer_id": null,
+      "player_assist_id": 40,
+      "team_scored": "orange",
+      "goal_minute": null,
+      "is_own_goal": false,
+      "event_type": "summary_goal",
+      "created_at": "2026-01-17T17:10:49.785Z"
+    }
+  ],
+  "summary": {
+    "entries": [
+      {
+        "player_id": 23,
+        "name": "Thayler",
+        "goals": 12,
+        "assists": 4
+      },
+      {
+        "player_id": 43,
+        "name": "Maciel",
+        "goals": 7,
+        "assists": 5
+      },
+      {
+        "player_id": 46,
+        "name": "Talles",
+        "goals": 6,
+        "assists": 8
+      },
+      {
+        "player_id": 35,
+        "name": "Kauã",
+        "goals": 6,
+        "assists": 1
+      },
+      {
+        "player_id": 39,
+        "name": "Markim",
+        "goals": 3,
+        "assists": 0
+      },
+      {
+        "player_id": 44,
+        "name": "Zezim",
+        "goals": 3,
+        "assists": 0
+      },
+      {
+        "player_id": 21,
+        "name": "Igor",
+        "goals": 2,
+        "assists": 1
+      },
+      {
+        "player_id": 34,
+        "name": "Guilherme",
+        "goals": 1,
+        "assists": 3
+      },
+      {
+        "player_id": 25,
+        "name": "Mauricio",
+        "goals": 1,
+        "assists": 1
+      },
+      {
+        "player_id": 41,
+        "name": "Nugas",
+        "goals": 1,
+        "assists": 1
+      },
+      {
+        "player_id": 24,
+        "name": "Zeca",
+        "goals": 1,
+        "assists": 1
+      },
+      {
+        "player_id": 36,
+        "name": "Yuran",
+        "goals": 0,
+        "assists": 6
+      },
+      {
+        "player_id": 40,
+        "name": "Alexandre",
+        "goals": 0,
+        "assists": 1
+      },
+      {
+        "player_id": 33,
+        "name": "Fábio",
+        "goals": 0,
+        "assists": 1
+      }
+    ],
+    "totals": {
+      "goals": 43,
+      "assists": 33
+    },
+    "craque_player_id": 23
+  }
+}

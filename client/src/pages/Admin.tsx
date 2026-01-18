@@ -76,6 +76,9 @@ const Admin: React.FC = () => {
   const [adjustLoading, setAdjustLoading] = useState(false)
   const [restoreLoading, setRestoreLoading] = useState(false)
   const [restoreFileName, setRestoreFileName] = useState<string>('')
+  const [playersRestoreLoading, setPlayersRestoreLoading] = useState(false)
+  const [playersRestoreFileName, setPlayersRestoreFileName] = useState<string>('')
+  const [playersRestoreText, setPlayersRestoreText] = useState<string>('')
   const [summaryModalOpen, setSummaryModalOpen] = useState(false)
   const [summaryAttendees, setSummaryAttendees] = useState<{ player_id: number; name: string }[]>([])
   const [summaryInputs, setSummaryInputs] = useState<Record<number, { goals: string; assists: string }>>({})
@@ -334,6 +337,57 @@ const Admin: React.FC = () => {
     }
   }
 
+  const downloadPlayersBackup = async () => {
+    try {
+      const resp = await api.get(`/api/players/backup`)
+      const backup = resp.data?.backup
+      const players = Array.isArray(backup?.players) ? backup.players : backup
+      if (!players || !Array.isArray(players)) throw new Error('Sem conteúdo')
+      const blob = new Blob([JSON.stringify({ players }, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `players_backup.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Erro ao baixar backup de jogadores')
+    }
+  }
+  const restorePlayersBackupFromFile = async (file: File) => {
+    try {
+      setPlayersRestoreLoading(true)
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      const payload = Array.isArray(parsed) ? { players: parsed } : parsed?.players ? { players: parsed.players } : parsed
+      await api.post('/api/players/backup/restore', { backup: payload })
+      toast.success('Jogadores restaurados com sucesso')
+      await loadPlayers()
+    } catch {
+      toast.error('Erro ao restaurar jogadores')
+    } finally {
+      setPlayersRestoreLoading(false)
+      setPlayersRestoreFileName('')
+    }
+  }
+  const restorePlayersBackupFromText = async () => {
+    try {
+      setPlayersRestoreLoading(true)
+      const trimmed = playersRestoreText.trim()
+      if (!trimmed) return
+      const parsed = JSON.parse(trimmed)
+      const payload = Array.isArray(parsed) ? { players: parsed } : parsed?.players ? { players: parsed.players } : parsed
+      await api.post('/api/players/backup/restore', { backup: payload })
+      toast.success('Jogadores restaurados com sucesso')
+      setPlayersRestoreText('')
+      await loadPlayers()
+    } catch {
+      toast.error('Erro ao restaurar jogadores')
+    } finally {
+      setPlayersRestoreLoading(false)
+    }
+  }
+
   const loadSummaryAttendees = async (sundayId: number): Promise<{ player_id: number; name: string }[]> => {
     try {
       const resp = await api.get(`/api/sundays/${sundayId}`)
@@ -537,6 +591,80 @@ const Admin: React.FC = () => {
                     <span className="text-xs text-gray-600">{restoreFileName}</span>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-lg font-semibold mb-3">Backup de Jogadores</h3>
+        <div className="bg-white rounded-lg shadow p-4 space-y-3">
+          <div className="flex gap-2">
+            <button
+              onClick={downloadPlayersBackup}
+              className="px-3 py-1.5 rounded-md bg-gray-800 text-white text-sm"
+            >
+              Baixar backup JSON
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  await api.post('/api/players/backup/save')
+                  toast.success('Backup de jogadores salvo na pasta backups')
+                } catch {
+                  toast.error('Erro ao salvar backup de jogadores')
+                }
+              }}
+              className="px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm"
+            >
+              Salvar backup na pasta
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-lg font-semibold mb-3">Restaurar Jogadores</h3>
+        <div className="bg-white rounded-lg shadow p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-gray-700">Colar JSON</label>
+              <textarea
+                value={playersRestoreText}
+                onChange={(e) => setPlayersRestoreText(e.target.value)}
+                rows={8}
+                className="mt-1 block w-full border-gray-300 rounded-md font-mono text-xs"
+                placeholder='{"players":[{"player_id":1,"name":"Fulano",...}]}'
+              />
+              <div className="mt-2">
+                <button
+                  onClick={restorePlayersBackupFromText}
+                  disabled={!playersRestoreText.trim() || playersRestoreLoading}
+                  className="px-3 py-1.5 rounded-md bg-primary-600 text-white text-sm disabled:opacity-50"
+                >
+                  {playersRestoreLoading ? 'Restaurando…' : 'Restaurar jogadores'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-700">Restaurar de arquivo (.json)</label>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    setPlayersRestoreFileName(file?.name || '')
+                    if (file) restorePlayersBackupFromFile(file)
+                  }}
+                  className="block w-full text-sm"
+                />
+                {playersRestoreLoading ? (
+                  <span className="text-xs text-gray-600">Restaurando…</span>
+                ) : (
+                  <span className="text-xs text-gray-600">{playersRestoreFileName}</span>
+                )}
               </div>
             </div>
           </div>

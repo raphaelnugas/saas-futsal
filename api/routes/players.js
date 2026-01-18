@@ -4,8 +4,50 @@ const { query, transaction } = require('../config/database');
 const logger = require('../utils/logger');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const router = express.Router();
+
+function resolveBackupDir() {
+  const envDir = (process.env.BACKUP_DIR || '').trim();
+  if (envDir) return path.resolve(envDir);
+  const candidates = [
+    path.resolve(__dirname, '..', '..'),
+    process.cwd(),
+    path.resolve(__dirname, '..')
+  ];
+  for (const root of candidates) {
+    try {
+      if (fs.existsSync(root)) {
+        return path.join(root, 'backups');
+      }
+    } catch {}
+  }
+  return path.join(process.cwd(), 'backups');
+}
+
+async function buildPlayersBackupPayload() {
+  const result = await query(`
+    SELECT 
+      player_id,
+      name,
+      is_goalkeeper,
+      photo_url,
+      dominant_foot,
+      height_cm,
+      birthdate,
+      attr_ofe,
+      attr_def,
+      attr_vel,
+      attr_tec,
+      attr_for,
+      attr_pot
+    FROM players
+    ORDER BY player_id ASC
+  `);
+  return { players: result.rows };
+}
 
 // Todas as rotas requerem autenticação
 router.use(authenticateToken);
@@ -650,6 +692,155 @@ router.post('/:id/reset-stats', requireAdmin, async (req, res) => {
       message: 'Não foi possível zerar as estatísticas do jogador',
       requestId: req.id
     });
+  }
+});
+
+router.get('/backup', requireAdmin, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        player_id,
+        name,
+        is_goalkeeper,
+        photo_url,
+        dominant_foot,
+        height_cm,
+        birthdate,
+        attr_ofe,
+        attr_def,
+        attr_vel,
+        attr_tec,
+        attr_for,
+        attr_pot
+      FROM players
+      ORDER BY player_id ASC
+    `);
+    res.json({ backup: { players: result.rows } });
+  } catch (error) {
+    logger.error('Erro ao gerar backup de jogadores', { error: error.message, requestId: req.id });
+    res.status(500).json({ error: 'Erro ao gerar backup de jogadores' });
+  }
+});
+
+router.post('/backup/restore', requireAdmin, async (req, res) => {
+  try {
+    const payload = req.body && req.body.backup ? req.body.backup : req.body;
+    const list = Array.isArray(payload?.players) ? payload.players : null;
+    if (!list) {
+      return res.status(400).json({ error: 'Backup inválido' });
+    }
+    const normalized = list
+      .map((p) => ({
+        player_id: Number(p?.player_id),
+        name: typeof p?.name === 'string' ? p.name.trim() : '',
+        is_goalkeeper: Boolean(p?.is_goalkeeper),
+        photo_url: typeof p?.photo_url === 'string' && p.photo_url.trim().length > 0 ? p.photo_url.trim() : null,
+        dominant_foot: typeof p?.dominant_foot === 'string' && p.dominant_foot.trim().length > 0 ? p.dominant_foot.trim() : null,
+        height_cm: Number.isFinite(Number(p?.height_cm)) ? Number(p.height_cm) : null,
+        birthdate: typeof p?.birthdate === 'string' && p.birthdate.trim().length > 0 ? p.birthdate.trim() : null,
+        attr_ofe: Number.isFinite(Number(p?.attr_ofe)) ? Math.max(1, Math.min(99, Number(p.attr_ofe))) : 50,
+        attr_def: Number.isFinite(Number(p?.attr_def)) ? Math.max(1, Math.min(99, Number(p.attr_def))) : 50,
+        attr_vel: Number.isFinite(Number(p?.attr_vel)) ? Math.max(1, Math.min(99, Number(p.attr_vel))) : 50,
+        attr_tec: Number.isFinite(Number(p?.attr_tec)) ? Math.max(1, Math.min(99, Number(p.attr_tec))) : 50,
+        attr_for: Number.isFinite(Number(p?.attr_for)) ? Math.max(1, Math.min(99, Number(p.attr_for))) : 50,
+        attr_pot: Number.isFinite(Number(p?.attr_pot)) ? Math.max(1, Math.min(99, Number(p.attr_pot))) : 50
+      }))
+      .filter((p) => Number.isFinite(p.player_id) && p.player_id > 0 && p.name.length > 0);
+    if (!normalized.length) {
+      return res.status(400).json({ error: 'Nenhum jogador válido no backup' });
+    }
+    const result = await transaction(async (client) => {
+      let inserted = 0;
+      let updated = 0;
+      for (const p of normalized) {
+        const existing = await client.query('SELECT player_id FROM players WHERE player_id = $1', [p.player_id]);
+        if (existing.rows.length > 0) {
+          await client.query(
+            `
+              UPDATE players
+              SET 
+                name = $2,
+                is_goalkeeper = $3,
+                photo_url = $4,
+                dominant_foot = $5,
+                height_cm = $6,
+                birthdate = $7,
+                attr_ofe = $8,
+                attr_def = $9,
+                attr_vel = $10,
+                attr_tec = $11,
+                attr_for = $12,
+                attr_pot = $13,
+                updated_at = CURRENT_TIMESTAMP
+              WHERE player_id = $1
+            `,
+            [
+              p.player_id,
+              p.name,
+              p.is_goalkeeper,
+              p.photo_url,
+              p.dominant_foot,
+              p.height_cm,
+              p.birthdate,
+              p.attr_ofe,
+              p.attr_def,
+              p.attr_vel,
+              p.attr_tec,
+              p.attr_for,
+              p.attr_pot
+            ]
+          );
+          updated++;
+        } else {
+          await client.query(
+            `
+              INSERT INTO players (
+                player_id, name, is_goalkeeper, photo_url, dominant_foot, height_cm, birthdate,
+                attr_ofe, attr_def, attr_vel, attr_tec, attr_for, attr_pot
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            `,
+            [
+              p.player_id,
+              p.name,
+              p.is_goalkeeper,
+              p.photo_url,
+              p.dominant_foot,
+              p.height_cm,
+              p.birthdate,
+              p.attr_ofe,
+              p.attr_def,
+              p.attr_vel,
+              p.attr_tec,
+              p.attr_for,
+              p.attr_pot
+            ]
+          );
+          inserted++;
+        }
+      }
+      return { inserted, updated, total: normalized.length };
+    });
+    res.json({ message: 'Jogadores restaurados', result });
+  } catch (error) {
+    logger.error('Erro ao restaurar backup de jogadores', { error: error.message, requestId: req.id });
+    res.status(500).json({ error: 'Erro ao restaurar backup de jogadores' });
+  }
+});
+
+router.post('/backup/save', requireAdmin, async (req, res) => {
+  try {
+    const dir = resolveBackupDir();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const file = path.join(dir, `jogadores_${dateStr}.json`);
+    await fs.promises.mkdir(dir, { recursive: true });
+    const payload = await buildPlayersBackupPayload();
+    const content = JSON.stringify(payload, null, 2);
+    await fs.promises.writeFile(file, content, 'utf8');
+    res.json({ message: 'Backup de jogadores salvo', file, bytes: Buffer.byteLength(content, 'utf8') });
+  } catch (error) {
+    logger.error('Erro ao salvar backup de jogadores', { error: error.message, requestId: req.id });
+    res.status(500).json({ error: 'Erro ao salvar backup de jogadores' });
   }
 });
 

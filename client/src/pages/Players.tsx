@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Plus, Edit, Trash2, User, Search } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Search, BarChart3, Download, XCircle } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
 import FifaPlayerCard from '../components/FifaPlayerCard'
+import * as XLSX from 'xlsx'
 
 interface Player {
   id: number
@@ -376,6 +377,188 @@ const Players: React.FC = () => {
     }
   }
 
+  type GeneralStatsRow = {
+    player_id: number
+    name: string
+    is_goalkeeper: boolean
+    goals: number
+    assists: number
+    goals_conceded: number
+    clean_sheets: number
+    craques: number
+    matches: number
+    wins: number
+    draws: number
+    losses: number
+    sundays: number
+    goals_per_game: number
+    goals_per_sunday: number
+    last_goals: number
+    last_assists: number
+  }
+  const [showGeneralStats, setShowGeneralStats] = useState(false)
+  const [generalStatsLoading, setGeneralStatsLoading] = useState(false)
+  const [generalStatsRows, setGeneralStatsRows] = useState<GeneralStatsRow[]>([])
+  const [generalFilter, setGeneralFilter] = useState('')
+  const [generalSortKey, setGeneralSortKey] = useState<keyof GeneralStatsRow>('goals')
+  const [generalSortAsc, setGeneralSortAsc] = useState(false)
+
+  const openGeneralStats = async () => {
+    try {
+      setShowGeneralStats(true)
+      setGeneralStatsLoading(true)
+      const [detailedResp, sundaysResp] = await Promise.all([
+        api.get('/api/stats/players/detailed'),
+        api.get('/api/sundays')
+      ])
+      const detailed = Array.isArray(detailedResp.data?.players) ? detailedResp.data.players as Array<{
+        player_id: number
+        name: string
+        photo_url?: string
+        is_goalkeeper: boolean
+        total_games_played: number
+        total_goals_scored: number
+        total_assists: number
+        total_goals_conceded: number
+        goals_per_game: number
+        assists_per_game: number
+        goals_conceded_per_game: number
+        games_finished: number
+        games_won: number
+        games_lost: number
+        games_drawn: number
+        sundays_played: number
+        goals_per_sunday: number
+      }> : []
+      const sundaysList = Array.isArray(sundaysResp.data?.sundays) ? sundaysResp.data.sundays as Array<{ sunday_id: number; date: string; craque_player_id?: number | null }> : []
+      const craquesMap = new Map<number, number>()
+      for (const s of sundaysList) {
+        const pid = Number(s.craque_player_id || 0)
+        if (pid > 0) craquesMap.set(pid, (craquesMap.get(pid) || 0) + 1)
+      }
+      const lastFinishedSundayId = sundaysList.length > 1 ? sundaysList[1].sunday_id : (sundaysList[0]?.sunday_id ?? 0)
+      const lastGoalsMap = new Map<number, number>()
+      const lastAssistsMap = new Map<number, number>()
+      if (lastFinishedSundayId) {
+        const matchesResp = await api.get(`/api/sundays/${lastFinishedSundayId}/matches`)
+        const matches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number; match_number: number; status: string }> : []
+        const realMatches = matches.filter(m => Number(m.match_number) > 0 && String(m.status) === 'finished')
+        await Promise.all(realMatches.map(async (m) => {
+          const statsResp = await api.get(`/api/matches/${m.match_id}/stats`)
+          const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string; is_own_goal?: boolean }> : []
+          for (const s of stats) {
+            if (String(s.event_type || 'goal') === 'goal') {
+              if (!s.is_own_goal && Number(s.player_scorer_id || 0) > 0) {
+                const pid = Number(s.player_scorer_id)
+                lastGoalsMap.set(pid, (lastGoalsMap.get(pid) || 0) + 1)
+              }
+              if (Number(s.player_assist_id || 0) > 0) {
+                const pid = Number(s.player_assist_id)
+                lastAssistsMap.set(pid, (lastAssistsMap.get(pid) || 0) + 1)
+              }
+            }
+          }
+        }))
+        const summaryMatch = matches.find(m => Number(m.match_number) === 0)
+        if (summaryMatch) {
+          const statsResp = await api.get(`/api/matches/${summaryMatch.match_id}/stats`)
+          const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string }> : []
+          const onlySummary = stats.filter(s => String(s.event_type || 'goal') === 'summary_goal')
+          for (const s of onlySummary) {
+            if (Number(s.player_scorer_id || 0) > 0) {
+              const pid = Number(s.player_scorer_id)
+              lastGoalsMap.set(pid, (lastGoalsMap.get(pid) || 0) + 1)
+            }
+            if (Number(s.player_assist_id || 0) > 0) {
+              const pid = Number(s.player_assist_id)
+              lastAssistsMap.set(pid, (lastAssistsMap.get(pid) || 0) + 1)
+            }
+          }
+        }
+      }
+      const matchesResp = await api.get('/api/matches')
+      const allMatches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number }> : []
+      const cleanSheetsMap = new Map<number, number>()
+      await Promise.all(allMatches.map(async (m) => {
+        const detResp = await api.get(`/api/matches/${m.match_id}`)
+        const match = detResp.data?.match as { status?: string; team_orange_score?: number; team_black_score?: number; participants?: Array<{ player_id: number; team: 'orange' | 'black' }> }
+        const finished = String(match?.status || '') === 'finished'
+        if (!finished) return
+        const orangeConcededZero = Number(match.team_black_score || 0) === 0
+        const blackConcededZero = Number(match.team_orange_score || 0) === 0
+        const parts = Array.isArray(match.participants) ? match.participants : []
+        for (const p of parts) {
+          const pid = Number(p.player_id)
+          if (!Number.isFinite(pid) || pid <= 0) continue
+          const teamClean = p.team === 'orange' ? orangeConcededZero : blackConcededZero
+          if (teamClean) cleanSheetsMap.set(pid, (cleanSheetsMap.get(pid) || 0) + 1)
+        }
+      }))
+      const baseMap = new Map<number, { name: string; is_goalkeeper: boolean }>()
+      for (const pl of players) baseMap.set(pl.id, { name: pl.name, is_goalkeeper: pl.is_goalkeeper })
+      const rows: GeneralStatsRow[] = detailed.map(d => ({
+        player_id: Number(d.player_id),
+        name: baseMap.get(Number(d.player_id))?.name || String(d.name),
+        is_goalkeeper: !!(baseMap.get(Number(d.player_id))?.is_goalkeeper || d.is_goalkeeper),
+        goals: Number(d.total_goals_scored || 0),
+        assists: Number(d.total_assists || 0),
+        goals_conceded: Number(d.total_goals_conceded || 0),
+        clean_sheets: Number(cleanSheetsMap.get(Number(d.player_id)) || 0),
+        craques: Number(craquesMap.get(Number(d.player_id)) || 0),
+        matches: Number(d.total_games_played || 0),
+        wins: Number(d.games_won || 0),
+        draws: Number(d.games_drawn || 0),
+        losses: Number(d.games_lost || 0),
+        sundays: Number(d.sundays_played || 0),
+        goals_per_game: Number(d.goals_per_game || 0),
+        goals_per_sunday: Number(d.goals_per_sunday || 0),
+        last_goals: Number(lastGoalsMap.get(Number(d.player_id)) || 0),
+        last_assists: Number(lastAssistsMap.get(Number(d.player_id)) || 0),
+      }))
+      setGeneralStatsRows(rows)
+    } catch {
+      toast.error('Erro ao carregar estatísticas gerais')
+      setGeneralStatsRows([])
+    } finally {
+      setGeneralStatsLoading(false)
+    }
+  }
+
+  const sortedAndFilteredGeneralRows = generalStatsRows
+    .filter(r => r.name.toLowerCase().includes(generalFilter.toLowerCase()))
+    .sort((a, b) => {
+      const va = a[generalSortKey]
+      const vb = b[generalSortKey]
+      const cmp = typeof va === 'string' && typeof vb === 'string'
+        ? va.localeCompare(vb)
+        : Number(vb) - Number(va)
+      return generalSortAsc ? -cmp : cmp
+    })
+
+  const exportGeneralStatsXlsx = () => {
+    const data = sortedAndFilteredGeneralRows.map(r => ({
+      Jogador: r.name,
+      Gols: r.goals,
+      Assistências: r.assists,
+      'Gols sofridos': r.goals_conceded,
+      'Sem sofrer gol': r.clean_sheets,
+      Craques: r.craques,
+      Partidas: r.matches,
+      Vitórias: r.wins,
+      Empates: r.draws,
+      Derrotas: r.losses,
+      Domingos: r.sundays,
+      'Média/jogo (gols)': r.goals_per_game,
+      'Média/domingo (gols)': r.goals_per_sunday,
+      'Gols último domingo': r.last_goals,
+      'Assistências último domingo': r.last_assists
+    }))
+    const ws = XLSX.utils.json_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Estatísticas')
+    XLSX.writeFile(wb, 'estatisticas_jogadores.xlsx')
+  }
+
   const filteredPlayers = players.filter(player =>
     player.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
@@ -392,13 +575,23 @@ const Players: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Jogadores</h1>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Novo Jogador
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={openGeneralStats}
+            className="inline-flex items-center px-3 py-2 border border-primary-600 text-sm font-medium rounded-md text-primary-700 bg-white hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            title="Estatísticas gerais"
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            Estatísticas gerais
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Novo Jogador
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -482,6 +675,124 @@ const Players: React.FC = () => {
           <p className="mt-1 text-sm text-gray-500">
             {searchTerm ? 'Tente ajustar sua busca' : 'Comece criando um novo jogador'}
           </p>
+        </div>
+      )}
+
+      {showGeneralStats && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50" onClick={() => setShowGeneralStats(false)}>
+          <div className="bg-white rounded-lg max-w-6xl w-full p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Estatísticas gerais de jogadores</h3>
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Filtrar por nome..."
+                    value={generalFilter}
+                    onChange={(e) => setGeneralFilter(e.target.value)}
+                    className="block w-64 pl-3 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  />
+                </div>
+                <select
+                  value={generalSortKey}
+                  onChange={(e) => setGeneralSortKey(e.target.value as keyof GeneralStatsRow)}
+                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-md text-sm"
+                  title="Ordenar por"
+                >
+                  <option value="goals">Gols</option>
+                  <option value="assists">Assistências</option>
+                  <option value="goals_conceded">Gols sofridos</option>
+                  <option value="clean_sheets">Sem sofrer gol</option>
+                  <option value="craques">Craques</option>
+                  <option value="matches">Partidas</option>
+                  <option value="wins">Vitórias</option>
+                  <option value="draws">Empates</option>
+                  <option value="losses">Derrotas</option>
+                  <option value="sundays">Domingos</option>
+                  <option value="goals_per_game">Média/jogo (gols)</option>
+                  <option value="goals_per_sunday">Média/domingo (gols)</option>
+                  <option value="last_goals">Gols último domingo</option>
+                  <option value="last_assists">Assistências último domingo</option>
+                </select>
+                <button
+                  onClick={() => setGeneralSortAsc(s => !s)}
+                  className="px-2 py-2 border border-gray-300 rounded-md text-sm"
+                  title="Alternar ordem"
+                >
+                  {generalSortAsc ? 'Asc' : 'Desc'}
+                </button>
+                <button
+                  onClick={exportGeneralStatsXlsx}
+                  className="inline-flex items-center px-3 py-2 border border-success-600 text-sm font-medium rounded-md text-white bg-success-600 hover:bg-success-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-success-500"
+                  title="Exportar XLSX"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Exportar XLSX
+                </button>
+                <button onClick={() => setShowGeneralStats(false)} className="text-gray-400 hover:text-gray-600" title="Fechar">
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            {generalStatsLoading ? (
+              <div className="text-sm text-gray-600">Carregando…</div>
+            ) : (
+              <>
+                {sortedAndFilteredGeneralRows.length === 0 ? (
+                  <div className="text-sm text-gray-600">Sem dados.</div>
+                ) : (
+                  <>
+                    <div className="overflow-auto max-h-[70vh]">
+                      <table className="min-w-[1920px] border-collapse">
+                        <thead className="sticky top-0 bg-white z-20 shadow-sm">
+                          <tr>
+                            <th className="sticky left-0 bg-white z-30 text-left px-2 py-2 border-b border-gray-200">
+                              Jogador
+                            </th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Gols</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Assistências</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Gols sofridos</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Sem sofrer gol</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Craques</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Partidas</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Vitórias</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Empates</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Derrotas</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Domingos</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Média/jogo</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Média/domingo</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Gols último</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Assist. último</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedAndFilteredGeneralRows.map(r => (
+                            <tr key={r.player_id} className="hover:bg-gray-50">
+                              <td className="sticky left-0 bg-white z-10 text-left px-2 py-2 border-r border-gray-200" title={r.name}>{r.name}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.goals}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.assists}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.goals_conceded}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.clean_sheets}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.craques}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.matches}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.wins}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.draws}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.losses}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.sundays}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{Number(r.goals_per_game).toFixed(2)}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{Number(r.goals_per_sunday).toFixed(2)}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.last_goals}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.last_assists}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 

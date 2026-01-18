@@ -708,7 +708,7 @@ const Sundays: React.FC = () => {
                       setStatsSharing(true)
                       const el = statsCaptureRef.current
                       if (!el) throw new Error('no_element')
-                      const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2 })
+                      const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2 } as any)
                       const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
                       if (!blob) throw new Error('no_blob')
                       const fileName = `estatisticas_${parseSundayDate(statsSunday.sunday_date).toLocaleDateString('pt-BR')}.png`

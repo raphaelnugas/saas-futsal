@@ -308,20 +308,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* History Card */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Link to="/sundays" className="block bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer">
-          <div className="flex items-center">
-            <div className="flex-shrink-0 bg-gray-100 rounded-lg p-3">
-              <Calendar className="h-6 w-6 text-gray-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Histórico</p>
-              <p className="text-sm text-gray-600">Alternar entre domingos</p>
-            </div>
-          </div>
-        </Link>
-      </div>
+      
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Matches */}

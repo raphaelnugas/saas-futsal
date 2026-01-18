@@ -78,6 +78,7 @@ const Sundays: React.FC = () => {
   const [summaryTotals, setSummaryTotals] = useState<{ goals: number; assists: number }>({ goals: 0, assists: 0 })
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [craquePhotos, setCraquePhotos] = useState<Record<number, string>>({})
+  const [craqueBadgeUrl, setCraqueBadgeUrl] = useState<string>('')
   const [craqueModalOpen, setCraqueModalOpen] = useState(false)
   const [craqueDetails, setCraqueDetails] = useState<{
     name: string
@@ -139,6 +140,15 @@ const Sundays: React.FC = () => {
         }))
         setCraquePhotos(prev => ({ ...prev, ...updates }))
       }
+      try {
+        const badgeResp = await api.get('/api/assets/craque-badge', { responseType: 'arraybuffer' })
+        const mime = badgeResp.headers['content-type'] || 'image/png'
+        const bytes = new Uint8Array(badgeResp.data as ArrayBuffer)
+        let bin = ''
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+        const base64 = btoa(bin)
+        setCraqueBadgeUrl(`data:${mime};base64,${base64}`)
+      } catch { setCraqueBadgeUrl('') }
     } catch (error: unknown) {
       toast.error('Erro ao carregar dados')
       const status = typeof error === 'object' && error && 'response' in error
@@ -425,7 +435,7 @@ const Sundays: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center">
                 <Calendar className="w-5 h-5 text-primary-600 mr-2" />
-                <h3 className="text-lg font-medium text-gray-900">
+                <h3 className="text-xl font-bold text-gray-900">
                   {parseSundayDate(sunday.sunday_date).toLocaleDateString('pt-BR', {
                     weekday: 'long',
                     year: 'numeric',
@@ -451,25 +461,28 @@ const Sundays: React.FC = () => {
               </div>
 
               {Number.isFinite(Number(sunday.craque_player_id)) && Number(sunday.craque_player_id) > 0 ? (
-                <div className="mt-2 border-2 border-red-600 bg-red-50 rounded-lg p-3">
-                  <div className="flex flex-col items-center">
-                    <button
-                      onClick={() => openCraqueModal(sunday.craque_player_id)}
-                      className="relative"
-                      title="Ver craque do domingo"
-                    >
+                <div className="relative mt-4 bg-gray-50 rounded-md p-3">
+                  <div className="flex items-center justify-center">
+                    <button onClick={() => openCraqueModal(sunday.craque_player_id)} title="Ver craque do domingo">
                       {craquePhotos[sunday.id] ? (
                         <img
                           src={craquePhotos[sunday.id]}
                           alt="Craque do Domingo"
-                          className="w-24 h-24 object-cover rounded-md shadow"
+                          className="w-24 h-24 object-cover rounded-md border-2"
+                          style={{ borderColor: '#FFD700' }}
                         />
                       ) : (
-                        <div className="w-24 h-24 bg-red-100 rounded-md" />
+                        <div className="w-24 h-24 bg-gray-200 rounded-md" />
                       )}
                     </button>
-                    <span className="mt-1 text-xs font-bold text-red-700 uppercase tracking-wide">Craque</span>
                   </div>
+                  {craqueBadgeUrl ? (
+                    <img
+                      src={craqueBadgeUrl}
+                      alt="Selo Craque"
+                      className="absolute -top-6 -right-6 w-32 h-32 z-10"
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -496,7 +509,7 @@ const Sundays: React.FC = () => {
                 className={`inline-flex items-center justify-center px-3 py-2 border shadow-sm text-sm font-medium rounded-md ${
                   deletingSundayId === sunday.id
                     ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    : 'text-white bg-red-600 border-transparent hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
+                    : 'border-red-500 text-red-600 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500'
                 }`}
                 title="Apagar domingo"
               >

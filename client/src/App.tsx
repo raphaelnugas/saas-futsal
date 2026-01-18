@@ -61,7 +61,7 @@ function App() {
               </ProtectedRoute>
             } />
           </Routes>
-          <Toaster position="top-right" />
+          <Toaster position="bottom-right" closeButton toastOptions={{ duration: 2500 }} />
         </div>
       </BrowserRouter>
     </AuthProvider>

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Plus, Calendar, Users, CheckCircle, XCircle, Clock, Trash2, BookOpen } from 'lucide-react'
+import { Plus, Calendar, Users, CheckCircle, XCircle, Clock, Trash2, BookOpen, Share2 } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
 import FifaPlayerCard from '../components/FifaPlayerCard'
+import html2canvas from 'html2canvas'
 
 interface Player {
   id: number
@@ -79,6 +80,14 @@ const Sundays: React.FC = () => {
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [craquePhotos, setCraquePhotos] = useState<Record<number, string>>({})
   const [craqueBadgeUrl, setCraqueBadgeUrl] = useState<string>('')
+  const [craqueStats, setCraqueStats] = useState<Record<number, { goals: number; assists: number; wins: number }>>({})
+  const [showStats, setShowStats] = useState(false)
+  const [statsSunday, setStatsSunday] = useState<Sunday | null>(null)
+  const [statsRows, setStatsRows] = useState<Array<{ player_id: number; name: string; matches: number; goals: number; assists: number; wins: number; conceded: number }>>([])
+  const [statsTotals, setStatsTotals] = useState<{ goals: number; assists: number }>({ goals: 0, assists: 0 })
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [statsSharing, setStatsSharing] = useState(false)
+  const statsCaptureRef = useRef<HTMLDivElement | null>(null)
   const [craqueModalOpen, setCraqueModalOpen] = useState(false)
   const [craqueDetails, setCraqueDetails] = useState<{
     name: string
@@ -162,6 +171,15 @@ const Sundays: React.FC = () => {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const run = async () => {
+      const targets = sundays.filter(s => Number.isFinite(Number(s.craque_player_id)) && Number(s.craque_player_id) > 0)
+      if (!targets.length) return
+      await Promise.all(targets.map(s => computeCraqueStatsForSunday(s.id, Number(s.craque_player_id))))
+    }
+    run()
+  }, [sundays])
 
   const openCraqueModal = async (playerId?: number | null) => {
     if (!playerId) return
@@ -389,6 +407,146 @@ const Sundays: React.FC = () => {
     }
   }
 
+  const handleOpenStats = async (sunday: Sunday) => {
+    try {
+      setStatsLoading(true)
+      setStatsSunday(sunday)
+      setShowStats(true)
+      const matchesResp = await api.get(`/api/sundays/${sunday.id}/matches`)
+      const matches = Array.isArray(matchesResp.data?.matches)
+        ? matchesResp.data.matches as Array<{ match_id: number; match_number: number; status: string; team_orange_score: number; team_black_score: number }>
+        : []
+      const realMatches = matches.filter(m => Number(m.match_number) > 0)
+      const byPlayer = new Map<number, { player_id: number; name: string; matches: number; goals: number; assists: number; wins: number; conceded: number }>()
+      const nameById = new Map<number, string>()
+      for (const p of players) nameById.set(p.id, p.name)
+      await Promise.all(realMatches.map(async (m) => {
+        const [matchResp, statsResp] = await Promise.all([
+          api.get(`/api/matches/${m.match_id}`),
+          api.get(`/api/matches/${m.match_id}/stats`)
+        ])
+        const participants = Array.isArray(matchResp.data?.match?.participants)
+          ? matchResp.data.match.participants as Array<{ player_id: number; team: 'orange' | 'black' }>
+          : []
+        const stats = Array.isArray(statsResp.data?.stats)
+          ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string; is_own_goal?: boolean }>
+          : []
+        for (const part of participants) {
+          const pid = Number(part.player_id)
+          if (!Number.isFinite(pid) || pid <= 0) continue
+          const entry = byPlayer.get(pid) || { player_id: pid, name: nameById.get(pid) || `Jogador ${pid}`, matches: 0, goals: 0, assists: 0, wins: 0, conceded: 0 }
+          entry.matches += 1
+          if (String(m.status) === 'finished') {
+            const opponentTeam = part.team === 'orange' ? m.team_black_score : m.team_orange_score
+            entry.conceded += opponentTeam
+            const winnerTeam = String(matchResp.data?.match?.winner_team || 'draw')
+            if (winnerTeam !== 'draw' && winnerTeam === String(part.team)) {
+              entry.wins += 1
+            }
+          }
+          byPlayer.set(pid, entry)
+        }
+        for (const s of stats) {
+          if (String(s.event_type || 'goal') === 'goal') {
+            if (!s.is_own_goal && Number.isFinite(Number(s.player_scorer_id)) && Number(s.player_scorer_id) > 0) {
+              const pid = Number(s.player_scorer_id)
+              const entry = byPlayer.get(pid) || { player_id: pid, name: nameById.get(pid) || `Jogador ${pid}`, matches: 0, goals: 0, assists: 0, wins: 0, conceded: 0 }
+              entry.goals += 1
+              byPlayer.set(pid, entry)
+            }
+            if (Number.isFinite(Number(s.player_assist_id)) && Number(s.player_assist_id) > 0) {
+              const pid = Number(s.player_assist_id)
+              const entry = byPlayer.get(pid) || { player_id: pid, name: nameById.get(pid) || `Jogador ${pid}`, matches: 0, goals: 0, assists: 0, wins: 0, conceded: 0 }
+              entry.assists += 1
+              byPlayer.set(pid, entry)
+            }
+          }
+        }
+      }))
+      const summaryMatch = matches.find(m => Number(m.match_number) === 0)
+      if (summaryMatch) {
+        const statsResp = await api.get(`/api/matches/${summaryMatch.match_id}/stats`)
+        const stats = Array.isArray(statsResp.data?.stats)
+          ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string }>
+          : []
+        const onlySummary = stats.filter(s => String(s.event_type || 'goal') === 'summary_goal')
+        for (const s of onlySummary) {
+          if (Number.isFinite(Number(s.player_scorer_id)) && Number(s.player_scorer_id) > 0) {
+            const pid = Number(s.player_scorer_id)
+            const entry = byPlayer.get(pid) || { player_id: pid, name: nameById.get(pid) || `Jogador ${pid}`, matches: 0, goals: 0, assists: 0, wins: 0, conceded: 0 }
+            entry.goals += 1
+            byPlayer.set(pid, entry)
+          }
+          if (Number.isFinite(Number(s.player_assist_id)) && Number(s.player_assist_id) > 0) {
+            const pid = Number(s.player_assist_id)
+            const entry = byPlayer.get(pid) || { player_id: pid, name: nameById.get(pid) || `Jogador ${pid}`, matches: 0, goals: 0, assists: 0, wins: 0, conceded: 0 }
+            entry.assists += 1
+            byPlayer.set(pid, entry)
+          }
+        }
+      }
+      const rows = Array.from(byPlayer.values()).filter(r => r.matches > 0 || r.goals > 0 || r.assists > 0 || r.wins > 0).sort((a, b) =>
+        (b.wins - a.wins) ||
+        (b.goals - a.goals) ||
+        (b.assists - a.assists) ||
+        (b.matches - a.matches) ||
+        a.name.localeCompare(b.name)
+      )
+      const totals = {
+        goals: rows.reduce((acc, r) => acc + r.goals, 0),
+        assists: rows.reduce((acc, r) => acc + r.assists, 0)
+      }
+      setStatsRows(rows)
+      setStatsTotals(totals)
+    } catch {
+      toast.error('Erro ao carregar estatísticas do domingo')
+      setStatsRows([])
+      setStatsTotals({ goals: 0, assists: 0 })
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
+  const computeCraqueStatsForSunday = async (sundayId: number, playerId: number) => {
+    try {
+      const matchesResp = await api.get(`/api/sundays/${sundayId}/matches`)
+      const matches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number; match_number: number; status: string; winner_team?: 'orange' | 'black' | 'draw' | null }> : []
+      let goals = 0
+      let assists = 0
+      let wins = 0
+      const summaryMatch = matches.find(m => Number(m.match_number) === 0)
+      if (summaryMatch) {
+        const statsResp = await api.get(`/api/matches/${summaryMatch.match_id}/stats`)
+        const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string }> : []
+        const onlySummary = stats.filter(s => String(s.event_type || 'goal') === 'summary_goal')
+        for (const s of onlySummary) {
+          if (Number.isFinite(Number(s.player_scorer_id)) && Number(s.player_scorer_id) === playerId) goals++
+          if (Number.isFinite(Number(s.player_assist_id)) && Number(s.player_assist_id) === playerId) assists++
+        }
+      }
+      const realMatches = matches.filter(m => Number(m.match_number) > 0)
+      await Promise.all(realMatches.map(async (m) => {
+        const statsResp = await api.get(`/api/matches/${m.match_id}/stats`)
+        const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string; is_own_goal?: boolean }> : []
+        for (const s of stats) {
+          if (String(s.event_type || 'goal') === 'goal') {
+            if (!s.is_own_goal && Number.isFinite(Number(s.player_scorer_id)) && Number(s.player_scorer_id) === playerId) goals++
+            if (Number.isFinite(Number(s.player_assist_id)) && Number(s.player_assist_id) === playerId) assists++
+          }
+        }
+        if (String(m.status) === 'finished' && String(m.winner_team || 'draw') !== 'draw') {
+          const matchResp = await api.get(`/api/matches/${m.match_id}`)
+          const participants = Array.isArray(matchResp.data?.match?.participants) ? matchResp.data.match.participants as Array<{ player_id: number; team: 'orange' | 'black' }> : []
+          const entry = participants.find(p => Number(p.player_id) === playerId)
+          if (entry && String(entry.team) === String(m.winner_team)) wins++
+        }
+      }))
+      setCraqueStats(prev => ({ ...prev, [sundayId]: { goals, assists, wins } }))
+    } catch {
+      setCraqueStats(prev => ({ ...prev, [sundayId]: { goals: 0, assists: 0, wins: 0 } }))
+    }
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled': return 'bg-blue-100 text-blue-800'
@@ -431,7 +589,7 @@ const Sundays: React.FC = () => {
       {/* Sundays Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sundays.map((sunday) => (
-          <div key={sunday.id} className="bg-white rounded-lg shadow p-6">
+          <div key={sunday.id} className="bg-white rounded-lg shadow p-6 cursor-pointer" onClick={() => handleOpenStats(sunday)}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center">
                 <Calendar className="w-5 h-5 text-primary-600 mr-2" />
@@ -463,7 +621,7 @@ const Sundays: React.FC = () => {
               {Number.isFinite(Number(sunday.craque_player_id)) && Number(sunday.craque_player_id) > 0 ? (
                 <div className="relative mt-4 bg-gray-50 rounded-md p-3">
                   <div className="flex items-center justify-center">
-                    <button onClick={() => openCraqueModal(sunday.craque_player_id)} title="Ver craque do domingo">
+                    <button onClick={(e) => { e.stopPropagation(); openCraqueModal(sunday.craque_player_id) }} title="Ver craque do domingo">
                       {craquePhotos[sunday.id] ? (
                         <img
                           src={craquePhotos[sunday.id]}
@@ -475,6 +633,15 @@ const Sundays: React.FC = () => {
                         <div className="w-24 h-24 bg-gray-200 rounded-md" />
                       )}
                     </button>
+                  </div>
+                  <div className="mt-2 text-center text-sm text-gray-700">
+                    {craqueStats[sunday.id] ? (
+                      <span>
+                        Gols: <span className="font-semibold">{craqueStats[sunday.id].goals}</span> • Assistências: <span className="font-semibold">{craqueStats[sunday.id].assists}</span> • Vitórias: <span className="font-semibold">{craqueStats[sunday.id].wins}</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">Carregando…</span>
+                    )}
                   </div>
                   {craqueBadgeUrl ? (
                     <img
@@ -489,14 +656,14 @@ const Sundays: React.FC = () => {
 
             <div className="mt-4 flex space-x-2">
               <button
-                onClick={() => handleManageAttendance(sunday)}
+                onClick={(e) => { e.stopPropagation(); handleManageAttendance(sunday) }}
                 className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 <Users className="w-4 h-4 mr-2" />
                 Gerenciar Presenças
               </button>
               <button
-                onClick={() => handleOpenSummary(sunday)}
+                onClick={(e) => { e.stopPropagation(); handleOpenSummary(sunday) }}
                 className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 title="Visualizar súmula deste domingo"
               >
@@ -504,7 +671,7 @@ const Sundays: React.FC = () => {
                 Súmula
               </button>
               <button
-                onClick={() => setConfirmDeleteSunday(sunday)}
+                onClick={(e) => { e.stopPropagation(); setConfirmDeleteSunday(sunday) }}
                 disabled={deletingSundayId === sunday.id}
                 className={`inline-flex items-center justify-center px-3 py-2 border shadow-sm text-sm font-medium rounded-md ${
                   deletingSundayId === sunday.id
@@ -526,6 +693,110 @@ const Sundays: React.FC = () => {
           <Calendar className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum domingo encontrado</h3>
           <p className="mt-1 text-sm text-gray-500">Comece criando um novo domingo</p>
+        </div>
+      )}
+
+      {showStats && statsSunday && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="p-6 relative">
+              <div className="absolute right-4 top-4 flex items-center space-x-2">
+                <button
+                  onClick={async () => {
+                    if (statsSharing) return
+                    try {
+                      setStatsSharing(true)
+                      const el = statsCaptureRef.current
+                      if (!el) throw new Error('no_element')
+                      const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2 })
+                      const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+                      if (!blob) throw new Error('no_blob')
+                      const fileName = `estatisticas_${parseSundayDate(statsSunday.sunday_date).toLocaleDateString('pt-BR')}.png`
+                      const file = new File([blob], fileName, { type: 'image/png' })
+                      const text = `Estatísticas do domingo ${parseSundayDate(statsSunday.sunday_date).toLocaleDateString('pt-BR')}`
+                      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: 'Estatísticas do Domingo', text })
+                      } else {
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = fileName
+                        document.body.appendChild(a)
+                        a.click()
+                        document.body.removeChild(a)
+                        URL.revokeObjectURL(url)
+                        const msg = encodeURIComponent(text)
+                        window.open(`https://wa.me/?text=${msg}`, '_blank')
+                      }
+                    } catch {
+                      toast.error('Falha ao compartilhar estatísticas')
+                    } finally {
+                      setStatsSharing(false)
+                    }
+                  }}
+                  disabled={statsSharing}
+                  className={`inline-flex items-center px-3 py-2 rounded-md text-sm font-medium ${statsSharing ? 'bg-green-300 text-white cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                  title="Enviar pelo WhatsApp"
+                >
+                  <Share2 className="w-4 h-4 mr-2" />
+                  {statsSharing ? 'Gerando…' : 'Enviar pelo WhatsApp'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowStats(false)
+                    setStatsSunday(null)
+                    setStatsRows([])
+                    setStatsTotals({ goals: 0, assists: 0 })
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+              <div ref={statsCaptureRef}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Estatísticas — {parseSundayDate(statsSunday.sunday_date).toLocaleDateString('pt-BR')}
+                  </h3>
+                </div>
+                {statsLoading ? (
+                  <div className="text-sm text-gray-600">Carregando…</div>
+                ) : (
+                  <>
+                    {statsRows.length === 0 ? (
+                      <div className="text-sm text-gray-600">Nenhuma estatística registrada para este domingo.</div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="text-sm text-gray-700">
+                          Total — Gols: <span className="font-semibold">{statsTotals.goals}</span> • Assistências: <span className="font-semibold">{statsTotals.assists}</span>
+                        </div>
+                        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-2 text-center text-xs font-semibold text-gray-500 uppercase border-b border-gray-200 pb-2">
+                          <div className="text-left">Jogador</div>
+                          <div>Partidas</div>
+                          <div>Gols</div>
+                          <div>Assistências</div>
+                          <div>Vitórias</div>
+                          <div>Gols sofridos</div>
+                        </div>
+                        <div className="divide-y">
+                          {statsRows.map(r => (
+                            <div key={r.player_id} className="py-3 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-2 text-center items-center">
+                              <div className="text-sm text-gray-800 text-left break-words" title={r.name}>{r.name}</div>
+                              <div className="text-sm text-gray-800 tabular-nums font-semibold">{r.matches}</div>
+                              <div className="text-sm text-gray-800 tabular-nums font-semibold">{r.goals}</div>
+                              <div className="text-sm text-gray-800 tabular-nums font-semibold">{r.assists}</div>
+                              <div className="text-sm text-gray-800 tabular-nums font-semibold">{r.wins}</div>
+                              <div className="text-sm text-gray-800 tabular-nums font-semibold">{r.conceded}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

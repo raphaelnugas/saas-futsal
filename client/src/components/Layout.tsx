@@ -9,7 +9,8 @@ import {
   LogOut,
   Menu,
   X,
-  BookOpen
+  BookOpen,
+  History as HistoryIcon
 } from 'lucide-react'
 import api from '../services/api'
 import type { AxiosInstance } from 'axios'
@@ -42,6 +43,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Dashboard', href: '/', icon: Home },
     { name: 'Jogadores', href: '/players', icon: Users },
     { name: 'Partidas', href: '/matches', icon: Trophy },
+    { name: 'Histórico', href: '/history', icon: HistoryIcon },
     { name: 'Domingos', href: '/sundays', icon: Calendar },
     { name: 'Regras', href: '/regras', icon: BookOpen },
   ]

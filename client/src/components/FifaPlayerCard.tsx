@@ -5,6 +5,7 @@ export interface FifaPlayerCardProps {
   overall: number
   role: string
   photoUrl?: string
+  overallStyle?: React.CSSProperties
   stats: {
     ofe: number
     def: number
@@ -17,7 +18,7 @@ export interface FifaPlayerCardProps {
   className?: string
 }
 
-const FifaPlayerCard: React.FC<FifaPlayerCardProps> = ({ name, overall, role, photoUrl, stats, templateUrl, className }) => {
+const FifaPlayerCard: React.FC<FifaPlayerCardProps> = ({ name, overall, role, photoUrl, overallStyle, stats, templateUrl, className }) => {
   const ordered = [
     { label: 'OFE', value: stats.ofe, order: 0 },
     { label: 'DEF', value: stats.def, order: 1 },
@@ -32,7 +33,7 @@ const FifaPlayerCard: React.FC<FifaPlayerCardProps> = ({ name, overall, role, ph
         className="relative w-full aspect-[500/708] bg-no-repeat bg-center bg-cover shadow-xl mx-auto rounded-md"
         style={{ backgroundImage: `url(${templateUrl})` }}
       >
-        <div className="absolute top-[64px] left-[48px] flex flex-col items-center text-[#3c3222]">
+        <div className="absolute flex flex-col items-center text-[#3c3222]" style={{ top: '13%', left: '14%', ...(overallStyle || {}) }}>
           <span className="text-4xl font-extrabold leading-none">{overall}</span>
           <span className="text-xs font-bold uppercase">{role}</span>
         </div>

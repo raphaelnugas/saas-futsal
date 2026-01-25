@@ -132,7 +132,8 @@ router.get('/config', async (req, res) => {
       SELECT 
         match_duration_minutes,
         max_players_per_team,
-        session_duration_minutes
+        session_duration_minutes,
+        many_present_rule_enabled
       FROM system_config 
       ORDER BY config_id DESC 
       LIMIT 1
@@ -147,7 +148,8 @@ router.get('/config', async (req, res) => {
     res.json({
       matchDuration: result.rows[0].match_duration_minutes,
       maxPlayersPerTeam: result.rows[0].max_players_per_team,
-      sessionDuration: result.rows[0].session_duration_minutes
+      sessionDuration: result.rows[0].session_duration_minutes,
+      manyPresentRuleEnabled: result.rows[0].many_present_rule_enabled
     });
 
   } catch (error) {
@@ -155,6 +157,50 @@ router.get('/config', async (req, res) => {
     res.status(500).json({ 
       error: 'Erro ao buscar configurações do sistema' 
     });
+  }
+});
+
+// Atualizar configurações do sistema (Requer Admin)
+router.put('/config', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Token não fornecido' });
+
+    const jwt = require('jsonwebtoken');
+    let userRole = 'user';
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      userRole = decoded.role;
+    } catch {
+      return res.status(401).json({ error: 'Token inválido' });
+    }
+
+    // Verificação de role removida para permitir que usuários autenticados (mesmo não-admins)
+    // possam alterar a regra de "sair os dois", já que isso faz parte da dinâmica do jogo.
+    /*
+    if (userRole !== 'admin') {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+    */
+
+    const { many_present_rule_enabled } = req.body;
+
+    // Se o valor foi fornecido, atualiza
+    if (typeof many_present_rule_enabled !== 'undefined') {
+      await query(`
+        UPDATE system_config 
+        SET many_present_rule_enabled = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE config_id = (SELECT config_id FROM system_config ORDER BY config_id DESC LIMIT 1)
+      `, [!!many_present_rule_enabled]);
+    }
+
+    res.json({ message: 'Configuração atualizada com sucesso' });
+
+  } catch (error) {
+    console.error('Erro ao atualizar configurações:', error);
+    res.status(500).json({ error: 'Erro ao atualizar configurações' });
   }
 });
 

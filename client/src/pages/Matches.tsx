@@ -183,6 +183,17 @@ const Matches: React.FC = () => {
     return todayMatches.length === 0
   }, [matches, currentSundayDate])
 
+  const startMatchButtonRef = useRef<HTMLButtonElement>(null)
+  const selectedCount = isFirstMatchToday 
+    ? selectedPlayers.length 
+    : teams.black.length + teams.orange.length
+
+  useEffect(() => {
+    if (selectedCount >= 10 && startMatchButtonRef.current) {
+      startMatchButtonRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [selectedCount])
+
   useEffect(() => {
     if (didRunConfigRef.current) return
     didRunConfigRef.current = true
@@ -840,13 +851,37 @@ const Matches: React.FC = () => {
       </div>
     )
   }
-  const [manyPresentRuleEnabled, setManyPresentRuleEnabled] = useState<boolean>(() => {
-    const raw = localStorage.getItem('manyPresentRuleEnabled')
-    return raw === '0' ? false : true
-  })
+  const [manyPresentRuleEnabled, setManyPresentRuleEnabled] = useState<boolean>(true)
+  const [auditModalOpen, setAuditModalOpen] = useState(false)
+
+  // Carregar configuração inicial do servidor
   useEffect(() => {
-    try { localStorage.setItem('manyPresentRuleEnabled', manyPresentRuleEnabled ? '1' : '0') } catch { void 0 }
-  }, [manyPresentRuleEnabled])
+    const loadConfig = async () => {
+      try {
+        const resp = await api.get('/api/auth/config')
+        if (typeof resp.data?.manyPresentRuleEnabled === 'boolean') {
+          setManyPresentRuleEnabled(resp.data.manyPresentRuleEnabled)
+        }
+      } catch (error) {
+        console.error('Erro ao carregar configurações:', error)
+      }
+    }
+    loadConfig()
+  }, [])
+
+  // Atualizar servidor quando houver mudança
+  const toggleManyPresentRule = async () => {
+    const newValue = !manyPresentRuleEnabled
+    setManyPresentRuleEnabled(newValue)
+    try {
+      await api.put('/api/auth/config', { many_present_rule_enabled: newValue })
+    } catch (error) {
+      console.error('Erro ao salvar configuração:', error)
+      toast.error('Erro ao salvar configuração no servidor')
+      // Reverter em caso de erro
+      setManyPresentRuleEnabled(!newValue)
+    }
+  }
   const adjustStreak = (team: 'black'|'orange', delta: number) => {
     if (!currentMatchId) return
     const next = { black: Number(consecutiveUnchanged.black || 0), orange: Number(consecutiveUnchanged.orange || 0) }
@@ -913,7 +948,7 @@ const Matches: React.FC = () => {
     }
   }
 
-  const finishMatch = async () => {
+  const confirmFinishMatch = async () => {
     if (!currentMatch) return
     const cleanup = (message = 'Partida finalizada com sucesso!') => {
       toast.success(message)
@@ -929,6 +964,7 @@ const Matches: React.FC = () => {
       localStorage.removeItem('matchLiveStats')
       localStorage.removeItem('matchAlarmMuted')
       localStorage.removeItem('matchGoalQueue')
+      setAuditModalOpen(false)
       fetchData()
     }
  
@@ -975,6 +1011,11 @@ const Matches: React.FC = () => {
       prepareNextTeamsRotation(currentMatch.blackScore, currentMatch.orangeScore)
     }
   }
+
+  const handleFinishClick = () => {
+    setAuditModalOpen(true)
+  }
+
   const submitSubstitution = async () => {
     if (!substitutionModal?.open || !currentMatchId) {
       setSubstitutionModal(null)
@@ -1576,10 +1617,12 @@ const Matches: React.FC = () => {
       const currentOrangeIds = teams.orange.map(p => p.id)
       if (blackScore === orangeScore) {
         const presentIds = Object.keys(presentMap).filter(id => presentMap[Number(id)]).map(Number)
-        const presentCount = presentIds.length
+        // const presentCount = presentIds.length // removido
         const leavingIdsAll = [...currentBlackIds, ...currentOrangeIds]
         const newBenchIds = Array.from(new Set<number>([...benchIdsAll, ...leavingIdsAll]))
-        if (presentCount > 17) {
+        
+        // Se a regra de sair os dois estiver ligada (manyPresentRuleEnabled)
+        if (manyPresentRuleEnabled) {
           setTeams({ black: [], orange: [] })
           setBench(players.filter(p => newBenchIds.includes(p.id)))
           localStorage.setItem('matchTeams', JSON.stringify({ black: [], orange: [] }))
@@ -1590,8 +1633,19 @@ const Matches: React.FC = () => {
           setSelectedChallengers([])
           setShowForm(true)
           setTieModal({ open: true, winner: null })
+          toast.info('Regra de sair os dois ativa: ambos os times saem no empate.')
+          ;(async () => {
+            try {
+              if (currentMatchId) {
+                const resp = await api.post(`/api/matches/${currentMatchId}/win-streak`, { black: 0, orange: 0 })
+                const s = (resp.data?.streak || { black: 0, orange: 0 }) as { black: number; orange: number }
+                setConsecutiveUnchanged({ black: Number(s.black || 0), orange: Number(s.orange || 0) })
+              }
+            } catch { void 0 }
+          })()
           return
         }
+
         setTieModal({ open: true, winner: null })
         return
       }
@@ -1704,12 +1758,12 @@ const Matches: React.FC = () => {
         <div className="w-full">
           <div className={`rounded-none md:rounded-2xl ${tick >= matchDurationMin * 60 ? 'bg-gradient-to-r from-red-700 via-red-600 to-red-500' : 'bg-gradient-to-r from-black via-gray-800 to-orange-600'} p-3 md:p-4 text-white shadow md:shadow-xl`}>
             <div className="grid grid-cols-3 items-center">
-              <div className="flex items-center justify-start">
+              <div className="flex items-center justify-start ml-2 md:ml-4">
                 <button
                   onClick={() => updateScore('black', true)}
-                  className="bg-green-500 hover:bg-green-600 text-white w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center"
+                  className="bg-black hover:bg-gray-900 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase"
                 >
-                  +
+                  Gol do Preto
                 </button>
               </div>
               <div className="text-center">
@@ -1777,7 +1831,7 @@ const Matches: React.FC = () => {
                 </div>
                 <div className="mt-1">
                   <button
-                    onClick={() => setManyPresentRuleEnabled(prev => !prev)}
+                    onClick={toggleManyPresentRule}
                     className={`inline-flex items-center px-2 py-1 rounded-md text-xs md:text-sm font-semibold shadow ${
                       manyPresentRuleEnabled ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
                     }`}
@@ -1809,12 +1863,12 @@ const Matches: React.FC = () => {
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-end">
+              <div className="flex items-center justify-end mr-2 md:mr-4">
                 <button
                   onClick={() => updateScore('orange', true)}
-                  className="bg-green-500 hover:bg-green-600 text-white w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center"
+                  className="bg-orange-500 hover:bg-orange-600 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase"
                 >
-                  +
+                  Gol do Laranja
                 </button>
               </div>
             </div>
@@ -2284,7 +2338,7 @@ const Matches: React.FC = () => {
             </div>
             <div className="text-center">
               <button
-                onClick={finishMatch}
+                onClick={handleFinishClick}
                 className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-danger-600 hover:bg-danger-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger-500"
               >
                 <Trophy className="w-5 h-5 mr-2" />
@@ -2357,7 +2411,7 @@ const Matches: React.FC = () => {
           
           {/* Player Selection */}
           <div className="mb-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-3">{rodizioMode ? 'Selecione os Desafiantes' : `Selecione os Jogadores (${selectedPlayers.length}/10)`}</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">{rodizioMode ? 'Selecione os Desafiantes' : `Selecione os Jogadores (${selectedCount}/10)`}</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               {[...players].sort((a, b) => {
                 const pa = presentMap[a.id] ? 1 : 0
@@ -2514,6 +2568,7 @@ const Matches: React.FC = () => {
             <div className="border-t pt-6">
               {!matchInProgress ? (
                 <button
+                  ref={startMatchButtonRef}
                   onClick={startMatch}
                   disabled={rodizioMode ? ((rodizioWinnerColor ? teams[rodizioWinnerColor].length : 0) !== (rodizioWinnerColor === 'black' ? teams.orange.length : teams.black.length)) : false}
                   className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-success-600 hover:bg-success-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-success-500"
@@ -2524,7 +2579,7 @@ const Matches: React.FC = () => {
               ) : (
                 <div className="text-center">
                   <button
-                    onClick={finishMatch}
+                    onClick={handleFinishClick}
                     className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-danger-600 hover:bg-danger-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger-500"
                   >
                     <Trophy className="w-5 h-5 mr-2" />
@@ -2763,6 +2818,80 @@ const Matches: React.FC = () => {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {auditModalOpen && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">Auditoria da Partida</h3>
+            
+            <div className="mb-6 text-center">
+              <div className="flex justify-center items-center space-x-4 mb-2">
+                <div className="flex flex-col items-center">
+                   <span className="text-sm font-bold text-gray-700">PRETO</span>
+                   <span className="text-4xl font-extrabold text-black">{currentMatch?.blackScore}</span>
+                </div>
+                <span className="text-2xl font-bold text-gray-400">X</span>
+                <div className="flex flex-col items-center">
+                   <span className="text-sm font-bold text-orange-600">LARANJA</span>
+                   <span className="text-4xl font-extrabold text-orange-600">{currentMatch?.orangeScore}</span>
+                </div>
+              </div>
+              <div className="text-lg font-mono text-gray-600">
+                 Tempo: {String(Math.floor(tick / 60)).padStart(2, '0')}:{String(tick % 60).padStart(2, '0')}
+              </div>
+              {manyPresentRuleEnabled && (
+                <div className="mt-2 text-sm text-red-600 font-bold italic">
+                  Regra de sair os dois está ativa!
+                </div>
+              )}
+            </div>
+
+            <div className="mb-6 border-t border-b border-gray-200 py-4 max-h-48 overflow-y-auto">
+              <h4 className="text-sm font-semibold text-gray-700 mb-2">Histórico de Eventos:</h4>
+              {matchStats.length === 0 ? (
+                <p className="text-xs text-gray-500 italic">Nenhum evento registrado.</p>
+              ) : (
+                <ul className="space-y-1">
+                   {matchStats.filter(ev => ev.event_type !== 'tie_decider').map(ev => {
+                       const scorer = players.find(p => p.id === ev.player_scorer_id)
+                       const assist = players.find(p => p.id === ev.player_assist_id)
+                       const minute = typeof ev.goal_minute === 'number' ? ev.goal_minute : 0
+                       return (
+                         <li key={ev.stat_id} className="text-xs flex justify-between">
+                           <span>{String(minute).padStart(2, '0')}' - {ev.event_type === 'goal' ? 'Gol' : 'Substituição'} ({ev.team_scored === 'black' ? 'Preto' : 'Laranja'})</span>
+                           <span className="font-medium">
+                              {ev.event_type === 'goal' 
+                                 ? (ev.is_own_goal ? 'Contra' : scorer?.name || '?')
+                                 : `Sai: ${assist?.name || '?'} / Entra: ${scorer?.name || '?'}`}
+                           </span>
+                         </li>
+                       )
+                   })}
+                </ul>
+              )}
+            </div>
+
+            <p className="text-sm text-center text-gray-800 font-medium mb-6">
+              Deseja realmente terminar a partida assim? <br/>
+              <span className="text-red-600 font-bold">Confirme com os capitães da partida!</span>
+            </p>
+
+            <div className="flex justify-between space-x-3">
+              <button
+                onClick={() => setAuditModalOpen(false)}
+                className="flex-1 px-4 py-3 rounded-md shadow-sm text-sm font-bold text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                CANCELAR
+              </button>
+              <button
+                onClick={confirmFinishMatch}
+                className="flex-1 px-4 py-3 rounded-md shadow-sm text-sm font-bold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+              >
+                CONFIRMAR
+              </button>
             </div>
           </div>
         </div>

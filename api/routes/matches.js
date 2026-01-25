@@ -631,9 +631,11 @@ router.post('/:id/participants', [
       let nextOrangeCounter = 0;
       if (prevRes.rows.length > 0) {
         const prev = prevRes.rows[0];
-        const presRes = await query(`SELECT COUNT(*)::int AS c FROM attendances WHERE sunday_id = $1 AND is_present = true`, [matchRow.sunday_id]);
-        const presentCount = Number(presRes.rows[0]?.c || 0);
-        const applyManyRule = typeof req.body?.apply_many_present_rule === 'boolean' ? !!req.body.apply_many_present_rule : true;
+        
+        // Buscar configuração do sistema para saber se a regra "sair os dois" está ativa
+        const configRes = await query('SELECT many_present_rule_enabled FROM system_config ORDER BY config_id DESC LIMIT 1');
+        const manyPresentRuleEnabled = configRes.rows.length > 0 ? configRes.rows[0].many_present_rule_enabled : false;
+
         const winnersRes = await query(`
           SELECT winner_team
           FROM matches
@@ -645,9 +647,7 @@ router.post('/:id/participants', [
         const threeInRow = winners.length >= 3 && winners[0] === winners[1] && winners[1] === winners[2] ? winners[0] : null;
         const blackPrevCounter = Number(prev.team_black_win_streak || 0);
         const orangePrevCounter = Number(prev.team_orange_win_streak || 0);
-        const blackPrevDots = blackPrevCounter <= 0 ? 0 : (blackPrevCounter === 1 ? 2 : 3);
-        const orangePrevDots = orangePrevCounter <= 0 ? 0 : (orangePrevCounter === 1 ? 2 : 3);
-        let remainTeam = null;
+        
         let tieWinner = null;
         try {
           const tieRes = await query(`
@@ -657,36 +657,39 @@ router.post('/:id/participants', [
             ORDER BY stat_id DESC
             LIMIT 1
           `, [prev.match_id]);
-          const tw = tieRes.rows[0]?.team_scored;
+          if (tieRes.rows[0]?.team_scored) {
+          const tw = tieRes.rows[0].team_scored;
           if (tw === 'black' || tw === 'orange') tieWinner = tw;
-        } catch {}
-        if (!threeInRow) {
-          if (applyManyRule && presentCount > 17) {
-            if (prev.winner_team === 'black' || prev.winner_team === 'orange') {
-              remainTeam = prev.winner_team;
-            } else if (prev.winner_team === 'draw') {
-              if (tieWinner === 'black' || tieWinner === 'orange') {
-                remainTeam = tieWinner;
-              } else if (prev_stay_team === 'black' || prev_stay_team === 'orange') {
-                remainTeam = prev_stay_team;
-              } else {
-                remainTeam = null;
-              }
-            } else {
-              remainTeam = null;
-            }
-          } else {
-            remainTeam = null;
-          }
         }
-        const isDrawPrev = prev.winner_team === 'draw';
+      } catch {}
+        
+      const isDrawPrev = prev.winner_team === 'draw';
         if (isDrawPrev) {
-          const tieWinnerCandidate = (presentCount < 18) && (tieWinner === 'black' || tieWinner === 'orange') ? tieWinner : null;
-          nextBlackCounter = tieWinnerCandidate === 'black' ? 1 : 0;
-          nextOrangeCounter = tieWinnerCandidate === 'orange' ? 1 : 0;
+          // Se manyPresentRuleEnabled for true, ambos saem independentemente do número de jogadores.
+          // Se for false, respeita o vencedor do desempate (tieWinner).
+          const ruleEnforcesBothLeave = manyPresentRuleEnabled;
+          const tieWinnerCandidate = !ruleEnforcesBothLeave && (tieWinner === 'black' || tieWinner === 'orange') ? tieWinner : null;
+          
+          if (tieWinnerCandidate === 'black') {
+            nextBlackCounter = (blackPrevCounter + 1 >= 3) ? 0 : (blackPrevCounter + 1);
+            nextOrangeCounter = 0;
+          } else if (tieWinnerCandidate === 'orange') {
+            nextOrangeCounter = (orangePrevCounter + 1 >= 3) ? 0 : (orangePrevCounter + 1);
+            nextBlackCounter = 0;
+          } else {
+            nextBlackCounter = 0;
+            nextOrangeCounter = 0;
+          }
         } else if (prev.winner_team === 'black' || prev.winner_team === 'orange') {
-          nextBlackCounter = prev.winner_team === 'black' ? Math.min(2, blackPrevCounter + 1) : 0;
-          nextOrangeCounter = prev.winner_team === 'orange' ? Math.min(2, orangePrevCounter + 1) : 0;
+          // Se o time já tinha 2 vitórias (visual: 3 dots) e ganhou a terceira, zera (saiu).
+          // Se não, incrementa (max 2 visualmente, mas backend armazena até resetar).
+          if (prev.winner_team === 'black') {
+            nextBlackCounter = (blackPrevCounter + 1 >= 3) ? 0 : (blackPrevCounter + 1);
+            nextOrangeCounter = 0;
+          } else {
+            nextOrangeCounter = (orangePrevCounter + 1 >= 3) ? 0 : (orangePrevCounter + 1);
+            nextBlackCounter = 0;
+          }
         }
       }
       await query(`UPDATE matches SET team_black_win_streak = $1, team_orange_win_streak = $2 WHERE match_id = $3`, [nextBlackCounter, nextOrangeCounter, id]);
@@ -1314,7 +1317,7 @@ router.post('/:id/sync-score', requireAdmin, async (req, res) => {
 
 // Ajuste manual das sequências de vitórias (streaks)
 router.post('/:id/win-streak', [
-  requireAdmin,
+  // requireAdmin removido para permitir que usuários autenticados (mesmo não-admins) ajustem a sequência
   body('black').isInt({ min: 0 }).withMessage('Sequência do preto deve ser inteira e >= 0'),
   body('orange').isInt({ min: 0 }).withMessage('Sequência do laranja deve ser inteira e >= 0')
 ], async (req, res) => {

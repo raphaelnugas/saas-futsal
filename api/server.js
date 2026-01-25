@@ -74,6 +74,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Rota raiz para feedback visual
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'API do Futsal Náutico está rodando! ⚽', 
+    status: 'online',
+    documentation: 'Acesse os endpoints em /api/...' 
+  });
+});
+
 // Rotas
 app.use('/api/auth', authRoutes);
 app.use('/api/players', playersRoutes);
@@ -279,6 +288,27 @@ app.listen(PORT, '0.0.0.0', () => {
         }
       } catch (err) {
         logger.error('Falha ao verificar/adicionar colunas em game_sundays', { error: err.message });
+      }
+
+      try {
+        const sysColsRes = await query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'system_config'
+        `);
+        const sysCols = sysColsRes.rows.map(r => r.column_name);
+        const sysAdds = [];
+        if (!sysCols.includes('many_present_rule_enabled')) {
+          sysAdds.push(`ADD COLUMN many_present_rule_enabled BOOLEAN DEFAULT FALSE`);
+        }
+        if (sysAdds.length) {
+          await query(`ALTER TABLE system_config ${sysAdds.join(', ')}`);
+          logger.info('Coluna many_present_rule_enabled adicionada em system_config');
+        } else {
+          logger.info('Coluna many_present_rule_enabled já existe em system_config');
+        }
+      } catch (err) {
+        logger.error('Falha ao verificar/adicionar colunas em system_config', { error: err.message });
       }
 
       try {

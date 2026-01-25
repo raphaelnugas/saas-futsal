@@ -1761,9 +1761,9 @@ const Matches: React.FC = () => {
               <div className="flex items-center justify-start ml-2 md:ml-4">
                 <button
                   onClick={() => updateScore('black', true)}
-                  className="bg-black hover:bg-gray-900 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase"
+                  className="bg-black hover:bg-gray-900 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase min-w-[100px] md:min-w-[120px] text-center"
                 >
-                  Gol do Preto
+                  Gol Preto
                 </button>
               </div>
               <div className="text-center">
@@ -1866,9 +1866,9 @@ const Matches: React.FC = () => {
               <div className="flex items-center justify-end mr-2 md:mr-4">
                 <button
                   onClick={() => updateScore('orange', true)}
-                  className="bg-orange-500 hover:bg-orange-600 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase"
+                  className="bg-orange-500 hover:bg-orange-600 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase min-w-[100px] md:min-w-[120px] text-center"
                 >
-                  Gol do Laranja
+                  Gol Laranja
                 </button>
               </div>
             </div>

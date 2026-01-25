@@ -2823,8 +2823,8 @@ const Matches: React.FC = () => {
         </div>
       )}
       {auditModalOpen && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 my-auto">
             <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">Auditoria da Partida</h3>
             
             <div className="mb-6 text-center">
@@ -2860,11 +2860,16 @@ const Matches: React.FC = () => {
                        const assist = players.find(p => p.id === ev.player_assist_id)
                        const minute = typeof ev.goal_minute === 'number' ? ev.goal_minute : 0
                        return (
-                         <li key={ev.stat_id} className="text-xs flex justify-between">
-                           <span>{String(minute).padStart(2, '0')}' - {ev.event_type === 'goal' ? 'Gol' : 'Substituição'} ({ev.team_scored === 'black' ? 'Preto' : 'Laranja'})</span>
-                           <span className="font-medium">
+                         <li key={ev.stat_id} className="text-xs flex justify-between items-start py-1">
+                           <span className="w-1/3 text-left">{String(minute).padStart(2, '0')}' - {ev.event_type === 'goal' ? 'Gol' : 'Substituição'} ({ev.team_scored === 'black' ? 'Preto' : 'Laranja'})</span>
+                           <span className="w-2/3 text-right font-medium break-words">
                               {ev.event_type === 'goal' 
-                                 ? (ev.is_own_goal ? 'Contra' : scorer?.name || '?')
+                                 ? (
+                                    <>
+                                      {ev.is_own_goal ? 'Contra' : scorer?.name || '?'}
+                                      {assist ? <span className="text-gray-500 font-normal"> (assist: {assist.name})</span> : ''}
+                                    </>
+                                 )
                                  : `Sai: ${assist?.name || '?'} / Entra: ${scorer?.name || '?'}`}
                            </span>
                          </li>

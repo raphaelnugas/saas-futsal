@@ -1616,7 +1616,7 @@ const Matches: React.FC = () => {
       const currentBlackIds = teams.black.map(p => p.id)
       const currentOrangeIds = teams.orange.map(p => p.id)
       if (blackScore === orangeScore) {
-        const presentIds = Object.keys(presentMap).filter(id => presentMap[Number(id)]).map(Number)
+        // const presentIds = Object.keys(presentMap).filter(id => presentMap[Number(id)]).map(Number) // removido por não uso
         // const presentCount = presentIds.length // removido
         const leavingIdsAll = [...currentBlackIds, ...currentOrangeIds]
         const newBenchIds = Array.from(new Set<number>([...benchIdsAll, ...leavingIdsAll]))

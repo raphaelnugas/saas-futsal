@@ -25,6 +25,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = React.useState(false)
   const [ticker, setTicker] = React.useState<{ startTime: string; blackScore: number; orangeScore: number } | null>(null)
+  const [connectionStatus, setConnectionStatus] = React.useState<'connected' | 'disconnected' | 'connecting'>('connecting')
   const [now, setNow] = React.useState<number>(Date.now())
   const lastStartRef = React.useRef<string | null>(null)
   const lastBeepAtRef = React.useRef<number>(0)
@@ -127,12 +128,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         } catch { void 0 }
       }
       es.onopen = () => {
+        setConnectionStatus('connected')
         if (pollIntervalRef.current) {
           clearInterval(pollIntervalRef.current)
           pollIntervalRef.current = null
         }
       }
       es.onerror = () => {
+        setConnectionStatus('disconnected')
         if (!pollIntervalRef.current) {
           pollIntervalRef.current = window.setInterval(() => {
             startPolling()
@@ -310,8 +313,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
+              <div className="flex-shrink-0 flex items-center space-x-3">
                 <h1 className="text-xl font-bold text-primary-600">Futsal Náutico</h1>
+                <div 
+                  className={`w-3 h-3 rounded-full ${
+                    connectionStatus === 'connected' ? 'bg-green-500' : 
+                    connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
+                  }`}
+                  title={
+                    connectionStatus === 'connected' ? 'Conectado ao servidor' : 
+                    connectionStatus === 'connecting' ? 'Conectando...' : 'Desconectado'
+                  }
+                />
               </div>
               
               {/* Desktop Navigation */}

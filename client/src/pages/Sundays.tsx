@@ -654,13 +654,13 @@ const Sundays: React.FC = () => {
               ) : null}
             </div>
 
-            <div className="mt-4 flex space-x-2">
+            <div className="mt-4 flex flex-col sm:flex-row gap-2">
               <button
                 onClick={(e) => { e.stopPropagation(); handleManageAttendance(sunday) }}
                 className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 <Users className="w-4 h-4 mr-2" />
-                Gerenciar Presenças
+                Presenças
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); handleOpenSummary(sunday) }}
@@ -680,8 +680,7 @@ const Sundays: React.FC = () => {
                 }`}
                 title="Apagar domingo"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
-                {deletingSundayId === sunday.id ? 'Apagando...' : 'Apagar'}
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </div>

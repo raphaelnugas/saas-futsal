@@ -79,6 +79,13 @@ router.get('/', async (req, res) => {
           JOIN matches m ON mp.match_id = m.match_id
           WHERE mp.player_id = players.player_id AND m.status = 'finished'
         ) AS total_games_played,
+        (
+          SELECT 
+            COALESCE(SUM(CASE WHEN m.winner_team = mp.team THEN 1 ELSE 0 END), 0)
+          FROM match_participants mp
+          JOIN matches m ON mp.match_id = m.match_id
+          WHERE mp.player_id = players.player_id AND m.status = 'finished'
+        ) AS total_wins,
         total_goals_scored,
         total_assists,
         total_goals_conceded,
@@ -719,6 +726,73 @@ router.get('/backup', requireAdmin, async (req, res) => {
   } catch (error) {
     logger.error('Erro ao gerar backup de jogadores', { error: error.message, requestId: req.id });
     res.status(500).json({ error: 'Erro ao gerar backup de jogadores' });
+  }
+});
+
+// Histórico de estatísticas por domingo para um jogador
+router.get('/:id/history', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Busca domingos em que o jogador esteve presente e calcula gols/assistências/vitórias
+    const result = await query(`
+      SELECT 
+        gs.date,
+        gs.sunday_id,
+        COALESCE(SUM(CASE 
+          WHEN sl.player_scorer_id = $1 
+          AND COALESCE(sl.event_type, 'goal') = 'goal' 
+          AND sl.is_own_goal = false 
+          THEN 1 ELSE 0 END), 0)::int as goals,
+        COALESCE(SUM(CASE 
+          WHEN sl.player_assist_id = $1 
+          AND COALESCE(sl.event_type, 'goal') = 'goal' 
+          THEN 1 ELSE 0 END), 0)::int as assists,
+        (
+          SELECT COALESCE(COUNT(*), 0)
+          FROM match_participants mp
+          JOIN matches m2 ON mp.match_id = m2.match_id
+          WHERE mp.player_id = $1
+            AND m2.sunday_id = gs.sunday_id
+            AND m2.status = 'finished'
+            AND m2.winner_team = mp.team
+        )::int as wins,
+        (
+          SELECT 
+            CASE WHEN COUNT(*) > 0 THEN
+              ROUND(CAST(SUM(
+                CASE 
+                  WHEN mp.team = 'black' THEN m3.team_black_score
+                  ELSE m3.team_orange_score
+                END
+              ) AS NUMERIC) / COUNT(*), 2)
+            ELSE 0 END
+          FROM match_participants mp
+          JOIN matches m3 ON mp.match_id = m3.match_id
+          WHERE mp.player_id = $1
+            AND m3.sunday_id = gs.sunday_id
+            AND m3.status = 'finished'
+        )::float as goals_conceded_avg
+      FROM attendances a
+      JOIN game_sundays gs ON a.sunday_id = gs.sunday_id
+      LEFT JOIN matches m ON gs.sunday_id = m.sunday_id AND m.status = 'finished'
+      LEFT JOIN stats_log sl ON m.match_id = sl.match_id 
+        AND (sl.player_scorer_id = $1 OR sl.player_assist_id = $1)
+      WHERE a.player_id = $1 AND a.is_present = true
+      GROUP BY gs.date, gs.sunday_id
+      ORDER BY gs.date ASC
+    `, [id]);
+
+    res.json({
+      history: result.rows
+    });
+
+  } catch (error) {
+    logger.error('Erro ao buscar histórico do jogador', { error: error.message, requestId: req.id });
+    res.status(500).json({ 
+      error: 'Erro ao buscar histórico',
+      message: 'Não foi possível recuperar o histórico do jogador'
+    });
   }
 });
 

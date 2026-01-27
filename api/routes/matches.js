@@ -839,7 +839,10 @@ router.post('/:id/finish', [
       const file = path.join(dir, `sunday_${sundayId}.json`);
       await fs.promises.mkdir(dir, { recursive: true });
       await fs.promises.writeFile(file, JSON.stringify(backup, null, 2), 'utf8');
-    } catch {}
+      console.log(`Backup salvo com sucesso: ${file}`);
+    } catch (err) {
+      console.error('Erro ao salvar backup da partida:', err);
+    }
 
   } catch (error) {
     console.error('Erro ao finalizar partida:', error);

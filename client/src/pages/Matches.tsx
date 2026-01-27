@@ -5,6 +5,11 @@ import api from '../services/api'
 import { logError } from '../services/logger'
 import type { AxiosInstance } from 'axios'
 import { useAuth } from '../hooks/useAuth'
+import { useMatchSocket } from '../hooks/useMatchSocket'
+import { useMatchTimer } from '../hooks/useMatchTimer'
+import AuditModal from '../components/matches/AuditModal'
+import ScoreBoard from '../components/matches/ScoreBoard'
+import PlayerSelectionGrid from '../components/matches/PlayerSelectionGrid'
 
 interface Player {
   id: number
@@ -82,7 +87,6 @@ const Matches: React.FC = () => {
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [goalModal, setGoalModal] = useState<{ open: boolean; team: 'black'|'orange' } | null>(null)
   const [goalForm, setGoalForm] = useState<{ scorer_id: number | 'own' | null; assist_id: number | null; is_own_goal: boolean }>({ scorer_id: null, assist_id: null, is_own_goal: false })
-  const [tick, setTick] = useState(0)
   const restoredRef = useRef(false)
   const [gkModal, setGkModal] = useState<{ open: boolean; candidates: Player[] } | null>(null)
   const [gkAsFieldId, setGkAsFieldId] = useState<number | null>(null)
@@ -90,8 +94,6 @@ const Matches: React.FC = () => {
   const [bench, setBench] = useState<Player[]>([])
   const [matchStats, setMatchStats] = useState<StatEvent[]>([])
   const [matchDurationMin, setMatchDurationMin] = useState<number>(10)
-  const beepIntervalRef = useRef<number | null>(null)
-  const audioCtxRef = useRef<AudioContext | null>(null)
   const [submittingGoal, setSubmittingGoal] = useState<boolean>(false)
   const [alarmMuted, setAlarmMuted] = useState<boolean>(() => {
     try {
@@ -100,6 +102,14 @@ const Matches: React.FC = () => {
       return false
     }
   })
+  
+  const { tick, setTick } = useMatchTimer({
+    matchInProgress,
+    matchDurationMin,
+    startTime: currentMatch?.startTime,
+    alarmMuted
+  })
+
   const [substitutionModal, setSubstitutionModal] = useState<{ open: boolean; team: 'black'|'orange' } | null>(null)
   const [substitutionForm, setSubstitutionForm] = useState<{ out_id: number | null; in_id: number | null; mode: 'bench' | 'swap' }>({ out_id: null, in_id: null, mode: 'bench' })
   const [playedIds, setPlayedIds] = useState<Set<number>>(new Set<number>())
@@ -136,16 +146,30 @@ const Matches: React.FC = () => {
   const [tieModal, setTieModal] = useState<{ open: boolean; winner: 'black'|'orange'|null }>(() => ({ open: false, winner: null }))
   const [lastFinishedMatchId, setLastFinishedMatchId] = useState<number | null>(null)
   const [consecutiveUnchanged, setConsecutiveUnchanged] = useState<{ black: number; orange: number }>({ black: 0, orange: 0 })
-  const [connectionStatus, setConnectionStatus] = useState<'online'|'reconnecting'|'offline'>('offline')
-  const sseRef = useRef<EventSource | null>(null)
-  const sseAttemptsRef = useRef<number>(0)
-  const pollIntervalRef = useRef<number | null>(null)
   const { isAdmin } = useAuth()
   const [editBlackScore, setEditBlackScore] = useState<string>('')
   const [editOrangeScore, setEditOrangeScore] = useState<string>('')
-  const sseStatsRef = useRef<{ opens: number; errors: number; reconnects: number; pings: number; inits: number; goals: number; finishes: number; polls: number }>({
-    opens: 0, errors: 0, reconnects: 0, pings: 0, inits: 0, goals: 0, finishes: 0, polls: 0
+  
+  const { connectionStatus } = useMatchSocket({
+    currentMatchId,
+    matchInProgress,
+    onMatchStatsUpdate: (stats) => setMatchStats(stats),
+    onScoreUpdate: (black, orange) => {
+      setCurrentMatch(prev => prev ? { ...prev, blackScore: black, orangeScore: orange } : prev)
+      try {
+        const rawTicker = localStorage.getItem('matchTicker')
+        if (rawTicker) {
+          const t = JSON.parse(rawTicker) as { startTime: string; blackScore: number; orangeScore: number }
+          t.blackScore = black
+          t.orangeScore = orange
+          localStorage.setItem('matchTicker', JSON.stringify(t))
+        }
+      } catch { void 0 }
+    },
+    onStreakUpdate: (black, orange) => setConsecutiveUnchanged({ black, orange }),
+    onFinishRemote: (black, orange) => finishMatchRemote(black, orange, 'Partida finalizada')
   })
+
   const lastWinnerRef = useRef<{ black: number[]; orange: number[] }>({ black: [], orange: [] })
   const didRunFetchRef = useRef(false)
   const didRunConfigRef = useRef(false)
@@ -219,6 +243,7 @@ const Matches: React.FC = () => {
         is_goalkeeper: boolean
         total_goals_scored?: number
         total_games_played?: number
+        total_wins?: number
         attr_ofe?: number
         attr_def?: number
         attr_vel?: number
@@ -232,7 +257,9 @@ const Matches: React.FC = () => {
         position: p.is_goalkeeper ? 'Goleiro' : 'Jogador',
         total_goals_scored: Number(p.total_goals_scored || 0),
         total_matches_played: Number(p.total_games_played || 0),
-        win_rate: 0,
+        win_rate: Number(p.total_games_played) > 0 
+          ? (Number(p.total_wins || 0) / Number(p.total_games_played)) * 100 
+          : 0,
         attr_ofe: typeof p.attr_ofe === 'number' ? p.attr_ofe : 50,
         attr_def: typeof p.attr_def === 'number' ? p.attr_def : 50,
         attr_vel: typeof p.attr_vel === 'number' ? p.attr_vel : 50,
@@ -387,65 +414,7 @@ const Matches: React.FC = () => {
     return Math.round(sum / count)
   }
 
-  const readQueue = (): QueueGoal[] => {
-    try {
-      const raw = localStorage.getItem('matchGoalQueue')
-      return raw ? JSON.parse(raw) as QueueGoal[] : []
-    } catch {
-      return []
-    }
-  }
-
-  const writeQueue = (q: QueueGoal[]) => {
-    try {
-      localStorage.setItem('matchGoalQueue', JSON.stringify(q))
-    } catch { void 0 }
-  }
-
-  const drainGoalQueue = async () => {
-    if (!currentMatchId || !matchInProgress) return
-    let q = readQueue()
-    let changed = false
-    for (let i = 0; i < q.length; i++) {
-      const item = q[i]
-      if (!item || item.matchId !== currentMatchId) continue
-      try {
-        await api.post(`/api/matches/${currentMatchId}/stats-goal`, item.payload)
-        delete q[i]
-        changed = true
-      } catch (e: unknown) {
-        const err = e as { response?: { status?: number } }
-        const st = err?.response?.status
-        if (st === 403) {
-          delete q[i]
-          changed = true
-          continue
-        }
-        break
-      }
-    }
-    if (changed) {
-      q = q.filter((x) => x && typeof x.matchId === 'number')
-      writeQueue(q)
-      try {
-        const statsResp = await api.get(`/api/matches/${currentMatchId}/stats`)
-        const stats = (statsResp.data?.stats || []) as StatEvent[]
-        setMatchStats(stats)
-        const blackGoals = stats.filter(ev => ev.event_type === 'goal' && ev.team_scored === 'black').length
-        const orangeGoals = stats.filter(ev => ev.event_type === 'goal' && ev.team_scored === 'orange').length
-        setCurrentMatch(prev => prev ? { ...prev, blackScore: blackGoals, orangeScore: orangeGoals } : prev)
-        const rawTicker = localStorage.getItem('matchTicker')
-        if (rawTicker) {
-          try {
-            const t = JSON.parse(rawTicker) as { startTime: string; blackScore: number; orangeScore: number }
-            t.blackScore = blackGoals
-            t.orangeScore = orangeGoals
-            localStorage.setItem('matchTicker', JSON.stringify(t))
-          } catch { void 0 }
-        }
-      } catch { void 0 }
-    }
-  }
+  const sortButtonRef = useRef<HTMLButtonElement>(null)
 
   const handlePlayerSelection = (playerId: number) => {
     if (teams.black.some(p => p.id === playerId)) {
@@ -460,12 +429,22 @@ const Matches: React.FC = () => {
       return
     }
     setSelectedPlayers(prev => {
-      if (prev.includes(playerId)) {
-        return prev.filter(id => id !== playerId)
+      const isSelected = prev.includes(playerId)
+      let next = prev
+      if (isSelected) {
+        next = prev.filter(id => id !== playerId)
       } else if (prev.length < 10) {
-        return [...prev, playerId]
+        next = [...prev, playerId]
       }
-      return prev
+      
+      // Se selecionou o 10º jogador, faz scroll para o botão de sortear
+      if (!isSelected && next.length === 10) {
+        setTimeout(() => {
+          sortButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 100)
+      }
+
+      return next
     })
   }
 
@@ -839,18 +818,6 @@ const Matches: React.FC = () => {
     }
   }
 
-  const renderStreakDots = (n: number) => {
-    const c = Math.max(0, Math.floor(Number(n || 0)))
-    const d = c <= 0 ? 0 : (c === 1 ? 2 : 3)
-    const dots = Array.from({ length: d })
-    return (
-      <div className="flex space-x-1 mt-0.5 h-2 md:h-2.5">
-        {dots.map((_, i) => (
-          <span key={`st-${i}`} className="inline-block w-2 h-2 md:w-2.5 md:h-2.5 rounded-full bg-green-500 ring-2 ring-white"></span>
-        ))}
-      </div>
-    )
-  }
   const [manyPresentRuleEnabled, setManyPresentRuleEnabled] = useState<boolean>(true)
   const [auditModalOpen, setAuditModalOpen] = useState(false)
 
@@ -1258,11 +1225,7 @@ const Matches: React.FC = () => {
   }
 
   useEffect(() => {
-    if (!matchInProgress || !currentMatch?.startTime) return
-    const i = setInterval(() => {
-      setTick(t => t + 1)
-    }, 1000)
-    return () => clearInterval(i)
+    // A lógica de tick foi movida para useMatchTimer
   }, [matchInProgress, currentMatch?.startTime])
 
   const startPolling = async () => {
@@ -1321,184 +1284,12 @@ const Matches: React.FC = () => {
     }
   }, [currentMatchId, matchInProgress])
   useEffect(() => {
-    if (!matchInProgress || !currentMatchId) {
-      if (sseRef.current) {
-        try { sseRef.current.close() } catch { void 0 }
-        sseRef.current = null
-      }
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
-      }
-      setConnectionStatus(navigator.onLine ? 'online' : 'offline')
-      return
-    }
-    try {
-      const base = ((api as AxiosInstance).defaults.baseURL) || ''
-      const token = localStorage.getItem('token') || ''
-      const sseUrl = base.endsWith('/api')
-        ? `${base}/matches/${currentMatchId}/stream?token=${encodeURIComponent(token)}`
-        : `${base}/api/matches/${currentMatchId}/stream?token=${encodeURIComponent(token)}`
-      const es = new EventSource(sseUrl)
-      sseRef.current = es
-      es.onopen = () => {
-        sseStatsRef.current.opens += 1
-        console.info('[sse:open]', { url: sseUrl, tentativa: sseAttemptsRef.current, aberturas: sseStatsRef.current.opens })
-        setConnectionStatus('online')
-        sseAttemptsRef.current = 0
-        if (pollIntervalRef.current) {
-          clearInterval(pollIntervalRef.current)
-          pollIntervalRef.current = null
-          console.info('[sse:poll-stop]', { partida: currentMatchId })
-        }
-      }
-      es.onerror = () => {
-        setConnectionStatus('reconnecting')
-        sseStatsRef.current.errors += 1
-        sseStatsRef.current.reconnects += 1
-        sseAttemptsRef.current = Math.min(10, sseAttemptsRef.current + 1)
-        console.warn('[sse:error]', {
-          tentativa: sseAttemptsRef.current,
-          online: navigator.onLine,
-          readyState: es.readyState,
-          errors: sseStatsRef.current.errors,
-          reconnects: sseStatsRef.current.reconnects
-        })
-        if (sseAttemptsRef.current >= 5 && !pollIntervalRef.current) {
-          console.info('[sse:poll-start]', { partida: currentMatchId })
-          pollIntervalRef.current = window.setInterval(() => {
-            startPolling()
-          }, 4000)
-        }
-      }
-      es.addEventListener('ping', () => {
-        sseStatsRef.current.pings += 1
-        console.info('[sse:ping]', { pings: sseStatsRef.current.pings })
-        setConnectionStatus('online')
-      })
-      es.addEventListener('init', (ev: MessageEvent) => {
-        try {
-          const data = JSON.parse(ev.data) as { stats: StatEvent[]; blackGoals: number; orangeGoals: number }
-          sseStatsRef.current.inits += 1
-          console.info('[sse:init]', { eventos: data.stats?.length || 0, golsPreto: Number(data.blackGoals || 0), golsLaranja: Number(data.orangeGoals || 0), inits: sseStatsRef.current.inits })
-          setMatchStats(data.stats || [])
-          setCurrentMatch(prev => prev ? { ...prev, blackScore: Number(data.blackGoals || 0), orangeScore: Number(data.orangeGoals || 0) } : prev)
-          const rawTicker = localStorage.getItem('matchTicker')
-          if (rawTicker) {
-            const t = JSON.parse(rawTicker) as { startTime: string; blackScore: number; orangeScore: number }
-            t.blackScore = Number(data.blackGoals || 0)
-            t.orangeScore = Number(data.orangeGoals || 0)
-            localStorage.setItem('matchTicker', JSON.stringify(t))
-          }
-          (async () => {
-            try {
-              const det = await api.get(`/api/matches/${currentMatchId}`)
-              const m = det.data?.match as { team_black_win_streak?: number, team_orange_win_streak?: number }
-              const sseBlack = Number(m?.team_black_win_streak || 0)
-              const sseOrange = Number(m?.team_orange_win_streak || 0)
-              setConsecutiveUnchanged({ black: Number(sseBlack), orange: Number(sseOrange) })
-              console.info('[streak:sse-init]', { partida: currentMatchId, preto: sseBlack, laranja: sseOrange })
-            } catch { void 0 }
-          })()
-        } catch { void 0 }
-      })
-      es.addEventListener('goal', (ev: MessageEvent) => {
-        try {
-          const data = JSON.parse(ev.data) as { stat: StatEvent; blackGoals: number; orangeGoals: number }
-          sseStatsRef.current.goals += 1
-          console.info('[sse:goal]', { golsPreto: Number(data.blackGoals || 0), golsLaranja: Number(data.orangeGoals || 0), goals: sseStatsRef.current.goals })
-          setMatchStats(prev => [...prev, data.stat])
-          setCurrentMatch(prev => prev ? { ...prev, blackScore: Number(data.blackGoals || 0), orangeScore: Number(data.orangeGoals || 0) } : prev)
-          const rawTicker = localStorage.getItem('matchTicker')
-          if (rawTicker) {
-            const t = JSON.parse(rawTicker) as { startTime: string; blackScore: number; orangeScore: number }
-            t.blackScore = Number(data.blackGoals || 0)
-            t.orangeScore = Number(data.orangeGoals || 0)
-            localStorage.setItem('matchTicker', JSON.stringify(t))
-          }
-          (async () => {
-            try {
-              const det = await api.get(`/api/matches/${currentMatchId}`)
-              const m = det.data?.match as { team_black_win_streak?: number, team_orange_win_streak?: number }
-              const sseBlack = Number(m?.team_black_win_streak || 0)
-              const sseOrange = Number(m?.team_orange_win_streak || 0)
-              setConsecutiveUnchanged({ black: Number(sseBlack), orange: Number(sseOrange) })
-              console.info('[streak:sse-goal]', { partida: currentMatchId, preto: sseBlack, laranja: sseOrange })
-            } catch { void 0 }
-          })()
-        } catch { void 0 }
-      })
-      es.addEventListener('finish', (ev: MessageEvent) => {
-        try {
-          const data = JSON.parse(ev.data) as { match_id: number; blackScore?: number; orangeScore?: number }
-          sseStatsRef.current.finishes += 1
-          console.info('[sse:finish]', { partida: data.match_id, finishes: sseStatsRef.current.finishes })
-          if (data.match_id === currentMatchId) {
-            setLastFinishedMatchId(data.match_id)
-            const b = Number((data.blackScore ?? currentMatch?.blackScore ?? 0) || 0)
-            const o = Number((data.orangeScore ?? currentMatch?.orangeScore ?? 0) || 0)
-            finishMatchRemote(b, o, 'Partida finalizada')
-          }
-        } catch { void 0 }
-      })
-    } catch {
-      setConnectionStatus('reconnecting')
-    }
-    return () => {
-      if (sseRef.current) {
-        try { sseRef.current.close() } catch { void 0 }
-        sseRef.current = null
-      }
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-        pollIntervalRef.current = null
-      }
-    }
+    // A lógica de SSE foi movida para useMatchSocket.
+    // Este useEffect vazio é mantido temporariamente para garantir que não quebramos a estrutura
+    // até removermos completamente o código antigo na próxima etapa.
   }, [matchInProgress, currentMatchId])
   useEffect(() => {
-    const overtime = matchInProgress && tick >= matchDurationMin * 60 && !alarmMuted
-    const startBeeping = () => {
-      if (beepIntervalRef.current) return
-      if (!audioCtxRef.current) {
-        try {
-          const W = window as WebAudioWindow
-          audioCtxRef.current = new (W.AudioContext || W.webkitAudioContext)()
-        } catch { audioCtxRef.current = null }
-      }
-      const playBeepOnce = () => {
-        const ctx = audioCtxRef.current
-        if (!ctx) return
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.type = 'sine'
-        osc.frequency.value = 900
-        gain.gain.value = 0.15
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.start()
-        setTimeout(() => {
-          osc.stop()
-          osc.disconnect()
-          gain.disconnect()
-        }, 350)
-      }
-      playBeepOnce()
-      beepIntervalRef.current = window.setInterval(playBeepOnce, 1200)
-    }
-    const stopBeeping = () => {
-      if (beepIntervalRef.current) {
-        clearInterval(beepIntervalRef.current)
-        beepIntervalRef.current = null
-      }
-    }
-    if (overtime) {
-      startBeeping()
-    } else {
-      stopBeeping()
-    }
-    return () => {
-      stopBeeping()
-    }
+    // A lógica de cronômetro foi movida para useMatchTimer
   }, [matchInProgress, tick, matchDurationMin, alarmMuted])
 
   useEffect(() => {
@@ -1746,8 +1537,33 @@ const Matches: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div className="h-8 w-40 bg-gray-200 rounded animate-pulse"></div>
+          <div className="flex space-x-2">
+            <div className="h-10 w-32 bg-gray-200 rounded animate-pulse"></div>
+            <div className="h-10 w-32 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white rounded-lg shadow p-6 h-64 animate-pulse">
+              <div className="flex justify-between items-center mb-4">
+                <div className="h-4 w-20 bg-gray-200 rounded"></div>
+                <div className="h-6 w-16 bg-gray-200 rounded"></div>
+              </div>
+              <div className="flex justify-between items-center my-6">
+                <div className="h-12 w-12 bg-gray-200 rounded-full"></div>
+                <div className="h-8 w-16 bg-gray-200 rounded"></div>
+                <div className="h-12 w-12 bg-gray-200 rounded-full"></div>
+              </div>
+              <div className="space-y-2">
+                <div className="h-4 w-full bg-gray-200 rounded"></div>
+                <div className="h-4 w-3/4 bg-gray-200 rounded"></div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -1756,123 +1572,31 @@ const Matches: React.FC = () => {
     <div className="space-y-6">
       {matchInProgress && (
         <div className="w-full">
-          <div className={`rounded-none md:rounded-2xl ${tick >= matchDurationMin * 60 ? 'bg-gradient-to-r from-red-700 via-red-600 to-red-500' : 'bg-gradient-to-r from-black via-gray-800 to-orange-600'} p-3 md:p-4 text-white shadow md:shadow-xl`}>
-            <div className="grid grid-cols-3 items-center">
-              <div className="flex items-center justify-start ml-2 md:ml-4">
-                <button
-                  onClick={() => updateScore('black', true)}
-                  className="bg-black hover:bg-gray-900 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase min-w-[100px] md:min-w-[120px] text-center"
-                >
-                  Gol Preto
-                </button>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center space-x-2 md:space-x-3 mb-1">
-                  <span className="inline-flex items-center justify-center px-2 md:px-3 py-1 rounded-full bg-white ring-2 ring-black text-xs md:text-sm font-bold text-black shadow-sm">
-                    {teams.black.length ? teamOverallAvg(teams.black) : 0}
-                  </span>
-                  <div className="flex flex-col items-center">
-                    <span className="inline-flex items-center px-2 md:px-3 py-1 rounded-full bg-black text-white text-xs md:text-sm font-extrabold tracking-wider shadow">
-                      PRETO
-                    </span>
-                    {renderStreakDots(consecutiveUnchanged.black)}
-                    <div className="flex items-center space-x-1 mt-1">
-                      <button
-                        onClick={() => adjustStreak('black', -1)}
-                        className="px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px]"
-                        title="Diminuir sequência preta"
-                      >
-                        −
-                      </button>
-                      <button
-                        onClick={() => adjustStreak('black', 1)}
-                        className="px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px]"
-                        title="Aumentar sequência preta"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center justify-center px-4 md:px-6 py-2 md:py-3 rounded-xl bg-white ring-2 md:ring-4 ring-black text-4xl md:text-7xl font-extrabold text-black shadow-sm">
-                    {currentMatch?.blackScore}
-                  </span>
-                  <span className="text-xl md:text-3xl font-extrabold text-white/80">x</span>
-                  <span className="inline-flex items-center justify-center px-4 md:px-6 py-2 md:py-3 rounded-xl bg-white ring-2 md:ring-4 ring-orange-500 text-4xl md:text-7xl font-extrabold text-orange-600 shadow-sm">
-                    {currentMatch?.orangeScore}
-                  </span>
-                  <div className="flex flex-col items-center">
-                    <span className="inline-flex items-center px-2 md:px-3 py-1 rounded-full bg-orange-500 text-white text-xs md:text-sm font-extrabold tracking-wider shadow">
-                      LARANJA
-                    </span>
-                    {renderStreakDots(consecutiveUnchanged.orange)}
-                    <div className="flex items-center space-x-1 mt-1">
-                      <button
-                        onClick={() => adjustStreak('orange', -1)}
-                        className="px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px]"
-                        title="Diminuir sequência laranja"
-                      >
-                        −
-                      </button>
-                      <button
-                        onClick={() => adjustStreak('orange', 1)}
-                        className="px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-white text-[10px]"
-                        title="Aumentar sequência laranja"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center justify-center px-2 md:px-3 py-1 rounded-full bg-white ring-2 ring-orange-500 text-xs md:text-sm font-bold text-orange-600 shadow-sm">
-                    {teams.orange.length ? teamOverallAvg(teams.orange) : 0}
-                  </span>
-                </div>
-                <div className="text-[10px] md:text-xs opacity-80">
-                  {connectionStatus === 'online' ? 'Conexão: Online' : connectionStatus === 'reconnecting' ? 'Conexão: Reconectando…' : 'Conexão: Offline'}
-                </div>
-                <div className="mt-1">
-                  <button
-                    onClick={toggleManyPresentRule}
-                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs md:text-sm font-semibold shadow ${
-                      manyPresentRuleEnabled ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                    }`}
-                    title="Alternar regra de sair os dois"
-                  >
-                    Regra de sair os dois: {manyPresentRuleEnabled ? 'Ligado' : 'Desligado'}
-                  </button>
-                </div>
-                <div className={`text-[10px] md:text-xs ${tick >= matchDurationMin * 60 ? 'text-red-200' : 'opacity-80'}`}>{tick >= matchDurationMin * 60 ? 'Tempo esgotado' : 'Duração'}</div>
-                <div className="text-xl md:text-3xl font-extrabold">{String(Math.floor(tick / 60)).padStart(2, '0')}:{String(tick % 60).padStart(2, '0')}</div>
-                {tick >= matchDurationMin * 60 && (
-                  <div className="mt-2">
-                    <button
-                      onClick={() => {
-                        const next = !alarmMuted
-                        setAlarmMuted(next)
-                        try {
-                          if (next) localStorage.setItem('matchAlarmMuted', '1')
-                          else localStorage.removeItem('matchAlarmMuted')
-                        } catch { void 0 }
-                      }}
-                      className={`inline-flex items-center px-3 py-1 rounded-md text-xs md:text-sm font-semibold shadow ${
-                        alarmMuted ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' : 'bg-red-600 text-white hover:bg-red-700'
-                      }`}
-                      title={alarmMuted ? 'Reativar alarme' : 'Silenciar alarme'}
-                    >
-                      {alarmMuted ? 'Reativar alarme' : 'Silenciar alarme'}
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center justify-end mr-2 md:mr-4">
-                <button
-                  onClick={() => updateScore('orange', true)}
-                  className="bg-orange-500 hover:bg-orange-600 text-white border-2 border-white px-3 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-bold shadow-md uppercase min-w-[100px] md:min-w-[120px] text-center"
-                >
-                  Gol Laranja
-                </button>
-              </div>
-            </div>
-          </div>
+          <ScoreBoard
+            blackScore={currentMatch?.blackScore || 0}
+            orangeScore={currentMatch?.orangeScore || 0}
+            tick={tick}
+            matchDurationMin={matchDurationMin}
+            matchInProgress={matchInProgress}
+            consecutiveUnchanged={consecutiveUnchanged}
+            connectionStatus={connectionStatus}
+            manyPresentRuleEnabled={manyPresentRuleEnabled}
+            alarmMuted={alarmMuted}
+            blackTeamAvg={teams.black.length ? teamOverallAvg(teams.black) : 0}
+            orangeTeamAvg={teams.orange.length ? teamOverallAvg(teams.orange) : 0}
+            onUpdateScore={updateScore}
+            onAdjustStreak={adjustStreak}
+            onFinishMatch={handleFinishClick}
+            onToggleManyRule={toggleManyPresentRule}
+            onToggleAlarm={() => {
+              const next = !alarmMuted
+              setAlarmMuted(next)
+              try {
+                if (next) localStorage.setItem('matchAlarmMuted', '1')
+                else localStorage.removeItem('matchAlarmMuted')
+              } catch { void 0 }
+            }}
+          />
           <div className="mt-3 md:mt-4 bg-white rounded-lg p-4 shadow">
             <h3 className="text-sm font-semibold text-gray-900 mb-2">Histórico de gols</h3>
             {tick >= matchDurationMin * 60 && currentMatch && (currentMatch.blackScore === currentMatch.orangeScore) && (
@@ -2412,61 +2136,17 @@ const Matches: React.FC = () => {
           {/* Player Selection */}
           <div className="mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-3">{rodizioMode ? 'Selecione os Desafiantes' : `Selecione os Jogadores (${selectedCount}/10)`}</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-              {[...players].sort((a, b) => {
-                const pa = presentMap[a.id] ? 1 : 0
-                const pb = presentMap[b.id] ? 1 : 0
-                if (pb !== pa) return pb - pa
-                return a.name.localeCompare(b.name)
-              }).map((player) => (
-                <button
-                  key={player.id}
-                  onClick={() => handlePlayerSelection(player.id)}
-                  className={`p-3 rounded-lg border-2 text-left transition-colors ${
-                    (teams.black.some(p => p.id === player.id))
-                      ? 'bg-gray-200 text-gray-900 border-gray-600'
-                      : (teams.orange.some(p => p.id === player.id))
-                        ? 'bg-orange-50 text-orange-900 border-orange-400'
-                        : (isFirstMatchToday && selectedPlayers.includes(player.id))
-                          ? 'bg-blue-100 text-blue-900 border-blue-500'
-                          : (presentMap[player.id])
-                            ? 'bg-green-50 border-green-500'
-                            : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-                  }`}
-                  disabled={!!(rodizioMode && rodizioWinnerColor && teams[rodizioWinnerColor].some(p => p.id === player.id))}
-                >
-                  <div className="font-medium text-sm">{player.name}</div>
-                  <div className="text-xs text-gray-500">{player.position}</div>
-                  <div className={`mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] ${
-                    (teams.black.some(p => p.id === player.id)) ? 'bg-gray-200 text-gray-800' :
-                    (teams.orange.some(p => p.id === player.id)) ? 'bg-orange-200 text-orange-900' :
-                    (isFirstMatchToday && selectedPlayers.includes(player.id)) ? 'bg-blue-200 text-blue-900' :
-                    presentMap[player.id] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    {(isFirstMatchToday && selectedPlayers.includes(player.id)) ? 'Selecionado' : (presentMap[player.id] ? 'Presente' : 'Ausente')}
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {player.total_goals_scored} gols • {player.win_rate.toFixed(0)}% vit.
-                  </div>
-                  <div className="mt-2 flex items-center space-x-1">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); addToTeam('black', player.id) }}
-                      disabled={isFirstMatchToday || teams.black.some(p => p.id === player.id) || !presentMap[player.id]}
-                      className="px-2 py-1 rounded bg-black text-white text-xs disabled:opacity-50"
-                    >
-                      Preto
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); addToTeam('orange', player.id) }}
-                      disabled={isFirstMatchToday || teams.orange.some(p => p.id === player.id) || !presentMap[player.id]}
-                      className="px-2 py-1 rounded bg-orange-500 text-white text-xs disabled:opacity-50"
-                    >
-                      Laranja
-                    </button>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <PlayerSelectionGrid
+              players={players}
+              teams={teams}
+              selectedPlayers={selectedPlayers}
+              presentMap={presentMap}
+              rodizioMode={rodizioMode}
+              rodizioWinnerColor={rodizioWinnerColor}
+              isFirstMatchToday={isFirstMatchToday}
+              onPlayerSelection={handlePlayerSelection}
+              onAddToTeam={addToTeam}
+            />
           </div>
 
           {/* Team Sorting */}
@@ -2476,6 +2156,7 @@ const Matches: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   {!rodizioMode && isFirstMatchToday && (
                     <button
+                      ref={sortButtonRef}
                       onClick={sortTeams}
                       className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-success-600 hover:bg-success-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-success-500"
                     >
@@ -2822,85 +2503,16 @@ const Matches: React.FC = () => {
           </div>
         </div>
       )}
-      {auditModalOpen && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg max-w-md w-full p-6 my-auto">
-            <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">Auditoria da Partida</h3>
-            
-            <div className="mb-6 text-center">
-              <div className="flex justify-center items-center space-x-4 mb-2">
-                <div className="flex flex-col items-center">
-                   <span className="text-sm font-bold text-gray-700">PRETO</span>
-                   <span className="text-4xl font-extrabold text-black">{currentMatch?.blackScore}</span>
-                </div>
-                <span className="text-2xl font-bold text-gray-400">X</span>
-                <div className="flex flex-col items-center">
-                   <span className="text-sm font-bold text-orange-600">LARANJA</span>
-                   <span className="text-4xl font-extrabold text-orange-600">{currentMatch?.orangeScore}</span>
-                </div>
-              </div>
-              <div className="text-lg font-mono text-gray-600">
-                 Tempo: {String(Math.floor(tick / 60)).padStart(2, '0')}:{String(tick % 60).padStart(2, '0')}
-              </div>
-              {manyPresentRuleEnabled && (
-                <div className="mt-2 text-sm text-red-600 font-bold italic">
-                  Regra de sair os dois está ativa!
-                </div>
-              )}
-            </div>
-
-            <div className="mb-6 border-t border-b border-gray-200 py-4 max-h-48 overflow-y-auto">
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">Histórico de Eventos:</h4>
-              {matchStats.length === 0 ? (
-                <p className="text-xs text-gray-500 italic">Nenhum evento registrado.</p>
-              ) : (
-                <ul className="space-y-1">
-                   {matchStats.filter(ev => ev.event_type !== 'tie_decider').map(ev => {
-                       const scorer = players.find(p => p.id === ev.player_scorer_id)
-                       const assist = players.find(p => p.id === ev.player_assist_id)
-                       const minute = typeof ev.goal_minute === 'number' ? ev.goal_minute : 0
-                       return (
-                         <li key={ev.stat_id} className="text-xs flex justify-between items-start py-1">
-                           <span className="w-1/3 text-left">{String(minute).padStart(2, '0')}' - {ev.event_type === 'goal' ? 'Gol' : 'Substituição'} ({ev.team_scored === 'black' ? 'Preto' : 'Laranja'})</span>
-                           <span className="w-2/3 text-right font-medium break-words">
-                              {ev.event_type === 'goal' 
-                                 ? (
-                                    <>
-                                      {ev.is_own_goal ? 'Contra' : scorer?.name || '?'}
-                                      {assist ? <span className="text-gray-500 font-normal"> (assist: {assist.name})</span> : ''}
-                                    </>
-                                 )
-                                 : `Sai: ${assist?.name || '?'} / Entra: ${scorer?.name || '?'}`}
-                           </span>
-                         </li>
-                       )
-                   })}
-                </ul>
-              )}
-            </div>
-
-            <p className="text-sm text-center text-gray-800 font-medium mb-6">
-              Deseja realmente terminar a partida assim? <br/>
-              <span className="text-red-600 font-bold">Confirme com os capitães da partida!</span>
-            </p>
-
-            <div className="flex justify-between space-x-3">
-              <button
-                onClick={() => setAuditModalOpen(false)}
-                className="flex-1 px-4 py-3 rounded-md shadow-sm text-sm font-bold text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                CANCELAR
-              </button>
-              <button
-                onClick={confirmFinishMatch}
-                className="flex-1 px-4 py-3 rounded-md shadow-sm text-sm font-bold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-              >
-                CONFIRMAR
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AuditModal
+        isOpen={auditModalOpen}
+        onClose={() => setAuditModalOpen(false)}
+        onConfirm={confirmFinishMatch}
+        currentMatch={currentMatch}
+        tick={tick}
+        matchStats={matchStats}
+        players={players}
+        manyPresentRuleEnabled={manyPresentRuleEnabled}
+      />
       {confirmDeleteId !== null && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-md w-full p-6">

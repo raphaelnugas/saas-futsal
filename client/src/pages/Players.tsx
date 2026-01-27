@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Plus, Edit, Trash2, User, Search, BarChart3, Download, XCircle } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Search, BarChart3, Download, XCircle, LineChart, Share2, ArrowUp, ArrowDown, Minus } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
 import FifaPlayerCard from '../components/FifaPlayerCard'
+import PlayerHistoryChartModal from '../components/players/PlayerHistoryChartModal'
 import * as XLSX from 'xlsx'
+import html2canvas from 'html2canvas'
 
 interface Player {
   id: number
@@ -149,6 +151,8 @@ const Players: React.FC = () => {
     total_games_played?: number
     total_assists?: number
   }
+
+  const [chartModal, setChartModal] = useState<{ isOpen: boolean; playerId: number | null; playerName: string }>({ isOpen: false, playerId: null, playerName: '' })
 
   const fetchPlayers = async () => {
     try {
@@ -381,9 +385,12 @@ const Players: React.FC = () => {
     player_id: number
     name: string
     is_goalkeeper: boolean
+    rank: number
+    rank_change: number
     goals: number
     assists: number
     goals_conceded: number
+    goals_conceded_per_game: number
     clean_sheets: number
     craques: number
     matches: number
@@ -402,6 +409,22 @@ const Players: React.FC = () => {
   const [generalFilter, setGeneralFilter] = useState('')
   const [generalSortKey, setGeneralSortKey] = useState<keyof GeneralStatsRow>('goals')
   const [generalSortAsc, setGeneralSortAsc] = useState(false)
+  
+  // Novo estado para o modo de tabela
+  type TableMode = 'artilharia' | 'assistentes' | 'defensores'
+  const [tableMode, setTableMode] = useState<TableMode>('artilharia')
+
+  // Função auxiliar para calcular Média de Gols Sofridos por Jogo
+  const getGoalsConcededPerGame = (conceded: number, matches: number) => {
+    return matches > 0 ? conceded / matches : 0
+  }
+
+  // Efeito para ajustar ordenação quando muda o modo
+  useEffect(() => {
+    if (showGeneralStats) {
+      openGeneralStats()
+    }
+  }, [tableMode])
 
   const openGeneralStats = async () => {
     try {
@@ -411,6 +434,7 @@ const Players: React.FC = () => {
         api.get('/api/stats/players/detailed'),
         api.get('/api/sundays')
       ])
+      // ... resto do código de fetching (igual ao anterior até o cálculo de ranking)
       const detailed = Array.isArray(detailedResp.data?.players) ? detailedResp.data.players as Array<{
         player_id: number
         name: string
@@ -430,35 +454,64 @@ const Players: React.FC = () => {
         sundays_played: number
         goals_per_sunday: number
       }> : []
-      const sundaysList = Array.isArray(sundaysResp.data?.sundays) ? sundaysResp.data.sundays as Array<{ sunday_id: number; date: string; craque_player_id?: number | null }> : []
+      const sundaysList = Array.isArray(sundaysResp.data?.sundays) ? sundaysResp.data.sundays as Array<{ sunday_id: number; date: string; finished_matches?: number; craque_player_id?: number | null }> : []
       const craquesMap = new Map<number, number>()
       for (const s of sundaysList) {
         const pid = Number(s.craque_player_id || 0)
         if (pid > 0) craquesMap.set(pid, (craquesMap.get(pid) || 0) + 1)
       }
-      const lastFinishedSundayId = sundaysList.length > 1 ? sundaysList[1].sunday_id : (sundaysList[0]?.sunday_id ?? 0)
+      const lastFinishedSunday = sundaysList.find(s => Number(s.finished_matches || 0) > 0) 
+        || (sundaysList.length > 1 ? sundaysList[1] : sundaysList[0])
+      
+      const lastFinishedSundayId = lastFinishedSunday?.sunday_id || 0
+
       const lastGoalsMap = new Map<number, number>()
       const lastAssistsMap = new Map<number, number>()
+      const lastMatchesMap = new Map<number, number>()
+      const lastGoalsConcededMap = new Map<number, number>()
+      const lastCleanSheetsMap = new Map<number, number>()
+
       if (lastFinishedSundayId) {
         const matchesResp = await api.get(`/api/sundays/${lastFinishedSundayId}/matches`)
-        const matches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number; match_number: number; status: string }> : []
+        const matches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number; match_number: number; status: string; team_orange_score?: number; team_black_score?: number; participants?: any[] }> : []
         const realMatches = matches.filter(m => Number(m.match_number) > 0 && String(m.status) === 'finished')
-        await Promise.all(realMatches.map(async (m) => {
-          const statsResp = await api.get(`/api/matches/${m.match_id}/stats`)
-          const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string; is_own_goal?: boolean }> : []
-          for (const s of stats) {
-            if (String(s.event_type || 'goal') === 'goal') {
-              if (!s.is_own_goal && Number(s.player_scorer_id || 0) > 0) {
-                const pid = Number(s.player_scorer_id)
-                lastGoalsMap.set(pid, (lastGoalsMap.get(pid) || 0) + 1)
-              }
-              if (Number(s.player_assist_id || 0) > 0) {
-                const pid = Number(s.player_assist_id)
-                lastAssistsMap.set(pid, (lastAssistsMap.get(pid) || 0) + 1)
-              }
-            }
-          }
-        }))
+        
+        // Calcular estatísticas do ÚLTIMO DOMINGO para subtrair
+        for (const m of realMatches) {
+           // Partidas jogadas
+           if (m.participants) {
+             for (const p of m.participants) {
+               const pid = Number(p.player_id)
+               lastMatchesMap.set(pid, (lastMatchesMap.get(pid) || 0) + 1)
+               
+               // Gols Sofridos no último domingo
+               const conceded = p.team === 'orange' ? Number(m.team_black_score || 0) : Number(m.team_orange_score || 0)
+               lastGoalsConcededMap.set(pid, (lastGoalsConcededMap.get(pid) || 0) + conceded)
+
+               // Clean Sheets no último domingo
+               if (conceded === 0) {
+                 lastCleanSheetsMap.set(pid, (lastCleanSheetsMap.get(pid) || 0) + 1)
+               }
+             }
+           }
+
+           const statsResp = await api.get(`/api/matches/${m.match_id}/stats`)
+           const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string; is_own_goal?: boolean }> : []
+           for (const s of stats) {
+             if (String(s.event_type || 'goal') === 'goal') {
+               if (!s.is_own_goal && Number(s.player_scorer_id || 0) > 0) {
+                 const pid = Number(s.player_scorer_id)
+                 lastGoalsMap.set(pid, (lastGoalsMap.get(pid) || 0) + 1)
+               }
+               if (Number(s.player_assist_id || 0) > 0) {
+                 const pid = Number(s.player_assist_id)
+                 lastAssistsMap.set(pid, (lastAssistsMap.get(pid) || 0) + 1)
+               }
+             }
+           }
+        }
+
+        // Summary Match (apenas gols/assistências)
         const summaryMatch = matches.find(m => Number(m.match_number) === 0)
         if (summaryMatch) {
           const statsResp = await api.get(`/api/matches/${summaryMatch.match_id}/stats`)
@@ -476,6 +529,9 @@ const Players: React.FC = () => {
           }
         }
       }
+
+      // --- CÁLCULO DE RANKING ---
+      
       const matchesResp = await api.get('/api/matches')
       const allMatches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number }> : []
       const cleanSheetsMap = new Map<number, number>()
@@ -494,27 +550,124 @@ const Players: React.FC = () => {
           if (teamClean) cleanSheetsMap.set(pid, (cleanSheetsMap.get(pid) || 0) + 1)
         }
       }))
-      const baseMap = new Map<number, { name: string; is_goalkeeper: boolean }>()
-      for (const pl of players) baseMap.set(pl.id, { name: pl.name, is_goalkeeper: pl.is_goalkeeper })
-      const rows: GeneralStatsRow[] = detailed.map(d => ({
-        player_id: Number(d.player_id),
-        name: baseMap.get(Number(d.player_id))?.name || String(d.name),
-        is_goalkeeper: !!(baseMap.get(Number(d.player_id))?.is_goalkeeper || d.is_goalkeeper),
+
+      // Função de ordenação dinâmica baseada no modo
+      const rankSort = (
+        a: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number}, 
+        b: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number}
+      ) => {
+        if (tableMode === 'artilharia') {
+           // Gols > Assistências > Nome
+           if (b.goals !== a.goals) return b.goals - a.goals
+           if (b.assists !== a.assists) return b.assists - a.assists
+        } else if (tableMode === 'assistentes') {
+           // Assistências > Gols > Nome
+           if (b.assists !== a.assists) return b.assists - a.assists
+           if (b.goals !== a.goals) return b.goals - a.goals
+        } else if (tableMode === 'defensores') {
+           // Média Gols Sofridos ASC (menor é melhor) > Clean Sheets DESC > Nome
+           // Importante: Jogadores com 0 jogos devem ir pro fim? Ou 0 média é bom?
+           // Assumindo que 0 jogos não entra no ranking de defensores ou tem média 0 mas deve ter prioridade menor se não jogou.
+           // Vamos tratar quem tem jogos > 0 primeiro se ambos tiverem 0.
+           
+           if (a.matches === 0 && b.matches > 0) return 1
+           if (b.matches === 0 && a.matches > 0) return -1
+           
+           if (Math.abs(a.goals_conceded_per_game - b.goals_conceded_per_game) > 0.001) 
+             return a.goals_conceded_per_game - b.goals_conceded_per_game // Menor é melhor
+           
+           if (b.clean_sheets !== a.clean_sheets) return b.clean_sheets - a.clean_sheets
+        }
+        return a.name.localeCompare(b.name)
+      }
+
+      // 1. Calcular Ranking Atual
+      const currentStatsList = detailed.map(d => ({
+        id: Number(d.player_id),
+        name: String(d.name),
         goals: Number(d.total_goals_scored || 0),
         assists: Number(d.total_assists || 0),
-        goals_conceded: Number(d.total_goals_conceded || 0),
+        goals_conceded_per_game: Number(d.goals_conceded_per_game || 0),
         clean_sheets: Number(cleanSheetsMap.get(Number(d.player_id)) || 0),
-        craques: Number(craquesMap.get(Number(d.player_id)) || 0),
-        matches: Number(d.total_games_played || 0),
-        wins: Number(d.games_won || 0),
-        draws: Number(d.games_drawn || 0),
-        losses: Number(d.games_lost || 0),
-        sundays: Number(d.sundays_played || 0),
-        goals_per_game: Number(d.goals_per_game || 0),
-        goals_per_sunday: Number(d.goals_per_sunday || 0),
-        last_goals: Number(lastGoalsMap.get(Number(d.player_id)) || 0),
-        last_assists: Number(lastAssistsMap.get(Number(d.player_id)) || 0),
-      }))
+        matches: Number(d.total_games_played || 0)
+      })).sort(rankSort)
+
+      const currentRankMap = new Map<number, number>()
+      currentStatsList.forEach((p, index) => currentRankMap.set(p.id, index + 1))
+
+      // 2. Calcular Ranking Anterior (subtraindo o último domingo)
+      const prevStatsList = detailed.map(d => {
+        const pid = Number(d.player_id)
+        const currentG = Number(d.total_goals_scored || 0)
+        const currentA = Number(d.total_assists || 0)
+        const currentMatches = Number(d.total_games_played || 0)
+        const currentConceded = Number(d.total_goals_conceded || 0)
+        const currentClean = Number(cleanSheetsMap.get(pid) || 0)
+
+        const lastG = lastGoalsMap.get(pid) || 0
+        const lastA = lastAssistsMap.get(pid) || 0
+        const lastM = lastMatchesMap.get(pid) || 0
+        const lastConceded = lastGoalsConcededMap.get(pid) || 0
+        const lastClean = lastCleanSheetsMap.get(pid) || 0
+
+        const prevG = Math.max(0, currentG - lastG)
+        const prevA = Math.max(0, currentA - lastA)
+        const prevM = Math.max(0, currentMatches - lastM)
+        const prevConceded = Math.max(0, currentConceded - lastConceded)
+        const prevClean = Math.max(0, currentClean - lastClean)
+        const prevAvgConceded = prevM > 0 ? prevConceded / prevM : 0
+
+        return {
+          id: pid,
+          name: String(d.name),
+          goals: prevG,
+          assists: prevA,
+          goals_conceded_per_game: prevAvgConceded,
+          clean_sheets: prevClean,
+          matches: prevM
+        }
+      }).sort(rankSort)
+
+      const prevRankMap = new Map<number, number>()
+      prevStatsList.forEach((p, index) => prevRankMap.set(p.id, index + 1))
+
+      // --- FIM CÁLCULO DE RANKING ---
+
+      const baseMap = new Map<number, { name: string; is_goalkeeper: boolean }>()
+      for (const pl of players) baseMap.set(pl.id, { name: pl.name, is_goalkeeper: pl.is_goalkeeper })
+      const rows: GeneralStatsRow[] = detailed.map(d => {
+        const pid = Number(d.player_id)
+        const curRank = currentRankMap.get(pid) || 999
+        const preRank = prevRankMap.get(pid) || 999
+        const change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
+
+        return {
+          player_id: Number(d.player_id),
+          name: baseMap.get(Number(d.player_id))?.name || String(d.name),
+          is_goalkeeper: !!(baseMap.get(Number(d.player_id))?.is_goalkeeper || d.is_goalkeeper),
+          rank: curRank,
+          rank_change: change,
+          goals: Number(d.total_goals_scored || 0),
+          assists: Number(d.total_assists || 0),
+          goals_conceded: Number(d.total_goals_conceded || 0),
+          goals_conceded_per_game: Number(d.goals_conceded_per_game || 0),
+          clean_sheets: Number(cleanSheetsMap.get(Number(d.player_id)) || 0),
+          craques: Number(craquesMap.get(Number(d.player_id)) || 0),
+          matches: Number(d.total_games_played || 0),
+          wins: Number(d.games_won || 0),
+          draws: Number(d.games_drawn || 0),
+          losses: Number(d.games_lost || 0),
+          sundays: Number(d.sundays_played || 0),
+          goals_per_game: Number(d.goals_per_game || 0),
+          goals_per_sunday: Number(d.goals_per_sunday || 0),
+          last_goals: Number(lastGoalsMap.get(Number(d.player_id)) || 0),
+          last_assists: Number(lastAssistsMap.get(Number(d.player_id)) || 0),
+        }
+      })
+      
+      // Ordena a lista final para exibição inicial de acordo com o ranking calculado
+      rows.sort((a, b) => a.rank - b.rank)
+      
       setGeneralStatsRows(rows)
     } catch {
       toast.error('Erro ao carregar estatísticas gerais')
@@ -524,9 +677,16 @@ const Players: React.FC = () => {
     }
   }
 
+  // Ajuste na ordenação visual para respeitar o ranking quando a chave for padrão
   const sortedAndFilteredGeneralRows = generalStatsRows
     .filter(r => r.name.toLowerCase().includes(generalFilter.toLowerCase()))
     .sort((a, b) => {
+      // Se o usuário clicou para ordenar por outra coluna, respeita a coluna
+      // Se não, respeita o ranking do modo atual
+      if (generalSortKey === 'goals' && tableMode === 'artilharia') return a.rank - b.rank
+      if (generalSortKey === 'assists' && tableMode === 'assistentes') return a.rank - b.rank
+      if (generalSortKey === 'goals_conceded_per_game' && tableMode === 'defensores') return a.rank - b.rank
+      
       const va = a[generalSortKey]
       const vb = b[generalSortKey]
       const cmp = typeof va === 'string' && typeof vb === 'string'
@@ -535,28 +695,147 @@ const Players: React.FC = () => {
       return generalSortAsc ? -cmp : cmp
     })
 
+  const [generalStatsSharing, setGeneralStatsSharing] = useState(false)
+  const generalStatsRef = useRef<HTMLDivElement>(null)
+
+  const exportGeneralStatsImage = async () => {
+    if (generalStatsSharing) return
+    try {
+      setGeneralStatsSharing(true)
+      
+      // Capturar apenas os 25 primeiros registros da tabela atual
+      // Vamos criar um elemento temporário fora da tela, preenchê-lo com os dados e capturá-lo
+      const top25 = sortedAndFilteredGeneralRows.slice(0, 25)
+      
+      const tempDiv = document.createElement('div')
+      tempDiv.style.position = 'absolute'
+      tempDiv.style.left = '-9999px'
+      tempDiv.style.top = '0'
+      tempDiv.style.width = '1200px' // Largura fixa para garantir boa visualização
+      tempDiv.style.backgroundColor = '#ffffff'
+      tempDiv.style.padding = '20px'
+      tempDiv.className = 'p-4 bg-white'
+      
+      // Construir HTML da tabela
+      let html = `
+        <h2 style="text-align:center; font-size: 24px; margin-bottom: 20px; font-weight: bold; font-family: sans-serif; color: #111;">Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}</h2>
+        <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;">
+          <thead>
+            <tr style="background-color: #f3f4f6; border-bottom: 2px solid #e5e7eb;">
+              <th style="padding: 10px; text-align: center; color: #4b5563;">#</th>
+              <th style="padding: 10px; text-align: left; color: #4b5563;">Jogador</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">G</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">A</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">MGS/J</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">NG</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">C</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">D</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">J</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">V</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">E</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">MG/J</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">MG/D</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">UG</th>
+              <th style="padding: 10px; text-align: center; color: #4b5563;">UA</th>
+            </tr>
+          </thead>
+          <tbody>
+      `
+      
+      top25.forEach((r, index) => {
+        const bg = index % 2 === 0 ? '#ffffff' : '#f9fafb'
+        // Ícones de seta simples
+        let arrow = ''
+        if (r.rank_change > 0) arrow = `<span style="color: #16a34a; font-size: 10px;">▲ ${r.rank_change}</span>`
+        if (r.rank_change < 0) arrow = `<span style="color: #dc2626; font-size: 10px;">▼ ${Math.abs(r.rank_change)}</span>`
+        
+        html += `
+          <tr style="background-color: ${bg}; border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px; text-align: center; font-weight: bold; color: #4b5563;">${r.rank}º</td>
+            <td style="padding: 8px; text-align: left; font-weight: 500;">
+              ${r.name} ${arrow}
+            </td>
+            <td style="padding: 8px; text-align: center;">${r.goals}</td>
+            <td style="padding: 8px; text-align: center;">${r.assists}</td>
+            <td style="padding: 8px; text-align: center;">${Number(r.goals_conceded_per_game).toFixed(2)}</td>
+            <td style="padding: 8px; text-align: center;">${r.clean_sheets}</td>
+            <td style="padding: 8px; text-align: center;">${r.craques}</td>
+            <td style="padding: 8px; text-align: center;">${r.sundays}</td>
+            <td style="padding: 8px; text-align: center;">${r.matches}</td>
+            <td style="padding: 8px; text-align: center;">${r.wins}</td>
+            <td style="padding: 8px; text-align: center;">${r.draws}</td>
+            <td style="padding: 8px; text-align: center;">${Number(r.goals_per_game).toFixed(2)}</td>
+            <td style="padding: 8px; text-align: center;">${Number(r.goals_per_sunday).toFixed(2)}</td>
+            <td style="padding: 8px; text-align: center; background-color: #fefce8; color: #a16207; font-weight: bold;">${r.last_goals}</td>
+            <td style="padding: 8px; text-align: center; background-color: #eff6ff; color: #1d4ed8; font-weight: bold;">${r.last_assists}</td>
+          </tr>
+        `
+      })
+      
+      html += `
+          </tbody>
+        </table>
+        <div style="margin-top: 10px; text-align: right; font-size: 12px; color: #6b7280; font-family: sans-serif;">
+          Gerado em ${new Date().toLocaleDateString('pt-BR')}
+        </div>
+      `
+      
+      tempDiv.innerHTML = html
+      document.body.appendChild(tempDiv)
+      
+      const canvas = await html2canvas(tempDiv, { backgroundColor: '#ffffff', scale: 2 })
+      document.body.removeChild(tempDiv)
+      
+      const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+      if (!blob) throw new Error('no_blob')
+      
+      const fileName = `estatisticas_top25_${tableMode}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.png`
+      const file = new File([blob], fileName, { type: 'image/png' })
+      const text = `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
+      
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Top 25 Jogadores', text })
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }
+    } catch (e) {
+      console.error(e)
+      toast.error('Erro ao exportar imagem')
+    } finally {
+      setGeneralStatsSharing(false)
+    }
+  }
+
   const exportGeneralStatsXlsx = () => {
     const data = sortedAndFilteredGeneralRows.map(r => ({
+      Posição: r.rank,
+      Variação: r.rank_change,
       Jogador: r.name,
       Gols: r.goals,
       Assistências: r.assists,
-      'Gols sofridos': r.goals_conceded,
-      'Sem sofrer gol': r.clean_sheets,
+      'Média Gols Sofridos/Jogo': Number(r.goals_conceded_per_game).toFixed(2),
+      'Sem Levar Gols': r.clean_sheets,
       Craques: r.craques,
-      Partidas: r.matches,
+      Domingos: r.sundays,
+      Jogos: r.matches,
       Vitórias: r.wins,
       Empates: r.draws,
-      Derrotas: r.losses,
-      Domingos: r.sundays,
-      'Média/jogo (gols)': r.goals_per_game,
-      'Média/domingo (gols)': r.goals_per_sunday,
-      'Gols último domingo': r.last_goals,
-      'Assistências último domingo': r.last_assists
+      'Média Gols/Jogo': Number(r.goals_per_game).toFixed(2),
+      'Média Gols/Domingo': Number(r.goals_per_sunday).toFixed(2),
+      'Últimos Gols': r.last_goals,
+      'Últimas Assistências': r.last_assists
     }))
     const ws = XLSX.utils.json_to_sheet(data)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Estatísticas')
-    XLSX.writeFile(wb, 'estatisticas_jogadores.xlsx')
+    XLSX.utils.book_append_sheet(wb, ws, 'Estatísticas Gerais')
+    XLSX.writeFile(wb, `estatisticas_gerais_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.xlsx`)
   }
 
   const filteredPlayers = players.filter(player =>
@@ -565,8 +844,34 @@ const Players: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div className="h-8 w-40 bg-gray-200 rounded animate-pulse"></div>
+          <div className="flex space-x-2">
+            <div className="h-10 w-32 bg-gray-200 rounded animate-pulse"></div>
+            <div className="h-10 w-32 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+        </div>
+        <div className="h-10 w-full bg-gray-200 rounded animate-pulse"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="bg-white rounded-lg shadow p-6 h-64 animate-pulse">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="rounded-full bg-gray-200 h-12 w-12"></div>
+                  <div className="space-y-2">
+                    <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                    <div className="h-3 w-16 bg-gray-200 rounded"></div>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2 mt-4">
+                <div className="h-4 bg-gray-200 rounded w-full"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -581,15 +886,16 @@ const Players: React.FC = () => {
             className="inline-flex items-center px-3 py-2 border border-primary-600 text-sm font-medium rounded-md text-primary-700 bg-white hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             title="Estatísticas gerais"
           >
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Estatísticas gerais
+            <BarChart3 className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Estatísticas gerais</span>
           </button>
           <button
             onClick={() => setShowForm(true)}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Jogador
+            <Plus className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Novo Jogador</span>
+            <span className="md:hidden">Novo</span>
           </button>
         </div>
       </div>
@@ -619,6 +925,7 @@ const Players: React.FC = () => {
                     <img
                       src={photoMap[player.id]}
                       alt={player.name}
+                      loading="lazy"
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -632,8 +939,19 @@ const Players: React.FC = () => {
               </div>
               <div className="flex space-x-2">
                 <button
+                  onClick={(e) => { 
+                    e.stopPropagation() 
+                    setChartModal({ isOpen: true, playerId: player.id, playerName: player.name })
+                  }}
+                  className="text-gray-400 hover:text-blue-600"
+                  title="Ver evolução"
+                >
+                  <LineChart className="w-4 h-4" />
+                </button>
+                <button
                   onClick={(e) => { e.stopPropagation(); handleEdit(player) }}
                   className="text-gray-400 hover:text-gray-600"
+                  title="Editar jogador"
                 >
                   <Edit className="w-4 h-4" />
                 </button>
@@ -680,58 +998,121 @@ const Players: React.FC = () => {
 
       {showGeneralStats && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50" onClick={() => setShowGeneralStats(false)}>
-          <div className="bg-white rounded-lg max-w-6xl w-full p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Estatísticas gerais de jogadores</h3>
-              <div className="flex items-center space-x-2">
-                <div className="relative">
+          <div className="bg-white rounded-lg max-w-[95vw] w-full p-4 relative flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setShowGeneralStats(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-50"
+            >
+              <XCircle className="w-8 h-8" />
+            </button>
+            
+            <h2 className="text-2xl font-bold mb-4 text-center mt-2">Estatísticas Gerais dos Jogadores</h2>
+            
+            <div className="flex flex-col space-y-3 mb-4">
+              {/* Linha de Navegação (Abas) */}
+              <div className="flex justify-center">
+                <div className="flex border border-gray-300 rounded-md overflow-hidden shadow-sm">
+                  <button
+                    onClick={() => {
+                       setTableMode('artilharia')
+                       setGeneralSortKey('goals')
+                       setGeneralSortAsc(false)
+                    }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'artilharia' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    title="Artilharia"
+                  >
+                    Artilheiros
+                  </button>
+                  <button
+                    onClick={() => {
+                       setTableMode('assistentes')
+                       setGeneralSortKey('assists')
+                       setGeneralSortAsc(false)
+                    }}
+                    className={`px-4 py-2 text-sm font-medium border-l border-r border-gray-300 transition-colors ${tableMode === 'assistentes' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    title="Assistentes"
+                  >
+                    Assistentes
+                  </button>
+                  <button
+                    onClick={() => {
+                       setTableMode('defensores')
+                       setGeneralSortKey('goals_conceded_per_game')
+                       setGeneralSortAsc(true)
+                    }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'defensores' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    title="Defensores"
+                  >
+                    Defensores
+                  </button>
+                </div>
+              </div>
+
+              {/* Linha de Filtros e Ações */}
+              <div className="flex flex-col md:flex-row justify-between items-center gap-3">
+                <div className="relative w-full md:w-64">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-gray-400" />
+                  </div>
                   <input
                     type="text"
-                    placeholder="Filtrar por nome..."
+                    placeholder="Filtrar jogador..."
+                    className="pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm w-full focus:ring-primary-500 focus:border-primary-500"
                     value={generalFilter}
                     onChange={(e) => setGeneralFilter(e.target.value)}
-                    className="block w-64 pl-3 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                   />
                 </div>
-                <select
-                  value={generalSortKey}
-                  onChange={(e) => setGeneralSortKey(e.target.value as keyof GeneralStatsRow)}
-                  className="pl-3 pr-8 py-2 border border-gray-300 rounded-md text-sm"
-                  title="Ordenar por"
-                >
-                  <option value="goals">Gols</option>
-                  <option value="assists">Assistências</option>
-                  <option value="goals_conceded">Gols sofridos</option>
-                  <option value="clean_sheets">Sem sofrer gol</option>
-                  <option value="craques">Craques</option>
-                  <option value="matches">Partidas</option>
-                  <option value="wins">Vitórias</option>
-                  <option value="draws">Empates</option>
-                  <option value="losses">Derrotas</option>
-                  <option value="sundays">Domingos</option>
-                  <option value="goals_per_game">Média/jogo (gols)</option>
-                  <option value="goals_per_sunday">Média/domingo (gols)</option>
-                  <option value="last_goals">Gols último domingo</option>
-                  <option value="last_assists">Assistências último domingo</option>
-                </select>
-                <button
-                  onClick={() => setGeneralSortAsc(s => !s)}
-                  className="px-2 py-2 border border-gray-300 rounded-md text-sm"
-                  title="Alternar ordem"
-                >
-                  {generalSortAsc ? 'Asc' : 'Desc'}
-                </button>
-                <button
-                  onClick={exportGeneralStatsXlsx}
-                  className="inline-flex items-center px-3 py-2 border border-success-600 text-sm font-medium rounded-md text-white bg-success-600 hover:bg-success-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-success-500"
-                  title="Exportar XLSX"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Exportar XLSX
-                </button>
-                <button onClick={() => setShowGeneralStats(false)} className="text-gray-400 hover:text-gray-600" title="Fechar">
-                  <XCircle className="w-6 h-6" />
-                </button>
+
+                <div className="flex flex-wrap justify-center gap-2">
+                  <select
+                    value={generalSortKey}
+                    onChange={(e) => setGeneralSortKey(e.target.value as keyof GeneralStatsRow)}
+                    className="pl-3 pr-8 py-2 border border-gray-300 rounded-md text-sm bg-white focus:ring-primary-500 focus:border-primary-500"
+                    title="Ordenar por"
+                  >
+                    <option value="goals">Gols (G)</option>
+                    <option value="assists">Assistências (A)</option>
+                    <option value="goals_conceded">Gols sofridos (GS)</option>
+                    <option value="goals_conceded_per_game">Média Gols Sofridos (MGS/J)</option>
+                    <option value="clean_sheets">Sem levar gol (NG)</option>
+                    <option value="craques">Craques (C)</option>
+                    <option value="matches">Partidas (J)</option>
+                    <option value="wins">Vitórias (V)</option>
+                    <option value="draws">Empates (E)</option>
+                    <option value="sundays">Domingos (D)</option>
+                    <option value="goals_per_game">Média/jogo (MG/J)</option>
+                    <option value="goals_per_sunday">Média/domingo (MG/D)</option>
+                    <option value="last_goals">Gols último (UG)</option>
+                    <option value="last_assists">Assist. último (UA)</option>
+                  </select>
+                  
+                  <button
+                    onClick={() => setGeneralSortAsc(s => !s)}
+                    className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50 text-gray-700"
+                    title="Alternar ordem"
+                  >
+                    {generalSortAsc ? 'Asc' : 'Desc'}
+                  </button>
+
+                  <button
+                    onClick={exportGeneralStatsImage}
+                    disabled={generalStatsSharing}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-sm"
+                    title="Compartilhar Imagem"
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    {generalStatsSharing ? '...' : 'Imagem'}
+                  </button>
+                  
+                  <button
+                    onClick={exportGeneralStatsXlsx}
+                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm"
+                    title="Exportar XLSX"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    XLSX
+                  </button>
+                </div>
               </div>
             </div>
             {generalStatsLoading ? (
@@ -742,47 +1123,61 @@ const Players: React.FC = () => {
                   <div className="text-sm text-gray-600">Sem dados.</div>
                 ) : (
                   <>
-                    <div className="overflow-auto max-h-[70vh]">
-                      <table className="min-w-[1920px] border-collapse">
+                    <div className="overflow-auto max-h-[70vh]" ref={generalStatsRef}>
+                      <table className="min-w-full border-collapse">
                         <thead className="sticky top-0 bg-white z-20 shadow-sm">
                           <tr>
-                            <th className="sticky left-0 bg-white z-30 text-left px-2 py-2 border-b border-gray-200">
+                            <th className="sticky left-0 bg-white z-30 text-center px-2 py-2 border-b border-gray-200 w-10 text-xs font-semibold text-gray-500 uppercase shadow-[1px_0_0_0_rgba(0,0,0,0.05)]">
+                              #
+                            </th>
+                            <th className="sticky left-10 bg-white z-30 text-left px-2 py-2 border-b border-gray-200 max-w-[150px] md:max-w-[200px] shadow-[1px_0_0_0_rgba(0,0,0,0.05)]">
                               Jogador
                             </th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Gols</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Assistências</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Gols sofridos</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Sem sofrer gol</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Craques</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Partidas</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Vitórias</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Empates</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Derrotas</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Domingos</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Média/jogo</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Média/domingo</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Gols último</th>
-                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">Assist. último</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Gols">G</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Assistências">A</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Média Gols Sofridos por Jogo">MGS/J</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Partidas Sem Levar Gols">NG</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Craques">C</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Domingos">D</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Jogos">J</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Vitórias">V</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Empates">E</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Média Gols/Jogo">MG/J</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Média Gols/Domingo">MG/D</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Últimos Gols">UG</th>
+                            <th className="px-2 py-2 text-center border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase" title="Últimas Assistências">UA</th>
                           </tr>
                         </thead>
                         <tbody>
                           {sortedAndFilteredGeneralRows.map(r => (
                             <tr key={r.player_id} className="hover:bg-gray-50">
-                              <td className="sticky left-0 bg-white z-10 text-left px-2 py-2 border-r border-gray-200" title={r.name}>{r.name}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.goals}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.assists}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.goals_conceded}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.clean_sheets}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.craques}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.matches}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.wins}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.draws}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.losses}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.sundays}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{Number(r.goals_per_game).toFixed(2)}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{Number(r.goals_per_sunday).toFixed(2)}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.last_goals}</td>
-                              <td className="text-center tabular-nums px-2 py-2 font-semibold">{r.last_assists}</td>
+                              <td className="sticky left-0 bg-white z-10 text-center px-1 py-2 border-r border-gray-200 font-bold text-xs md:text-sm text-gray-600 shadow-[1px_0_0_0_rgba(0,0,0,0.05)]">
+                                {r.rank}º
+                              </td>
+                              <td className="sticky left-10 bg-white z-10 text-left px-2 py-2 border-r border-gray-200 whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px] md:max-w-[200px] font-medium text-xs md:text-sm shadow-[1px_0_0_0_rgba(0,0,0,0.05)]" title={r.name}>
+                                <div className="flex items-center space-x-1">
+                                  <span className="truncate">{r.name}</span>
+                                  {r.rank_change !== 0 && (
+                                    <span className={`text-[10px] flex items-center ${r.rank_change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {r.rank_change > 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                                      {Math.abs(r.rank_change)}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.goals}</td>
+                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.assists}</td>
+                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{Number(r.goals_conceded_per_game).toFixed(2)}</td>
+                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.clean_sheets}</td>
+                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.craques}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.sundays}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.matches}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.wins}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.draws}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{Number(r.goals_per_game).toFixed(2)}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{Number(r.goals_per_sunday).toFixed(2)}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-bold text-xs md:text-sm bg-yellow-50 text-yellow-700">{r.last_goals}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-bold text-xs md:text-sm bg-blue-50 text-blue-700">{r.last_assists}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -798,15 +1193,20 @@ const Players: React.FC = () => {
 
       {showDetails && details && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50" onClick={() => setShowDetails(false)}>
-          <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setShowDetails(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-50"
+            >
+              <XCircle className="w-8 h-8" />
+            </button>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">{details.player.name}</h3>
-              <button onClick={() => setShowDetails(false)} className="text-gray-500 hover:text-gray-700">Fechar</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <div className="w-full flex justify-center items-start">
-                  <div className="w-72">
+                  <div className="w-72" id="player-card-container">
                     <FifaPlayerCard
                       name={details.player.name}
                       overall={Math.round((
@@ -831,7 +1231,57 @@ const Players: React.FC = () => {
                     />
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const el = document.getElementById('player-card-container')
+                        if (!el) return
+                        
+                        // Temporariamente ajustar para captura de alta qualidade
+                        const canvas = await html2canvas(el, { 
+                          backgroundColor: null,
+                          scale: 2,
+                          useCORS: true,
+                          allowTaint: true
+                        })
+                        
+                        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
+                        if (!blob) return
+                        
+                        const fileName = `card_${details.player.name.replace(/\s+/g, '_').toLowerCase()}.png`
+                        const file = new File([blob], fileName, { type: 'image/png' })
+                        
+                        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                          await navigator.share({
+                            files: [file],
+                            title: `Card - ${details.player.name}`,
+                            text: `Confira o card de ${details.player.name}!`
+                          })
+                        } else {
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = fileName
+                          document.body.appendChild(a)
+                          a.click()
+                          document.body.removeChild(a)
+                          URL.revokeObjectURL(url)
+                        }
+                      } catch (err) {
+                        console.error(err)
+                        toast.error('Erro ao compartilhar card')
+                      }
+                    }}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm"
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Compartilhar Card
+                  </button>
+                </div>
+
+                <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <div className="text-gray-500">Gols</div>
                     <div className="text-gray-900 font-semibold">{details.stats.goals_scored}</div>
@@ -1433,6 +1883,13 @@ const Players: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Modal de Gráfico de Evolução */}
+      <PlayerHistoryChartModal
+        isOpen={chartModal.isOpen}
+        onClose={() => setChartModal({ isOpen: false, playerId: null, playerName: '' })}
+        playerId={chartModal.playerId}
+        playerName={chartModal.playerName}
+      />
     </div>
   )
 }

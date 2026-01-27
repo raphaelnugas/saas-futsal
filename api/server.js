@@ -41,13 +41,14 @@ app.use(cors({
 const isProd = (process.env.NODE_ENV === 'production');
 const limiter = rateLimit({
   windowMs: isProd ? (15 * 60 * 1000) : (60 * 60 * 1000),
-  max: isProd ? 100 : 1000,
+  max: isProd ? 300 : 2000, // Increased limit: 300 requests per 15 min in prod, 2000 per hour in dev
   message: 'Muitas requisições deste IP, tente novamente mais tarde.',
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use((req, res, next) => {
   const p = req.path || '';
+  // Whitelist para rotas críticas de alta frequência (SSE, Assets, Stats, Dashboard)
   if (/^\/api\/matches\/\d+\/stream$/.test(p)) return next();
   if (p === '/api/matches/ticker/stream') return next();
   if (/^\/api\/matches\/\d+\/stats$/.test(p)) return next();
@@ -55,6 +56,7 @@ app.use((req, res, next) => {
   if (p.startsWith('/assets/')) return next();
   if (p.startsWith('/players/') && (p.endsWith('/photo') || p.endsWith('/photo2'))) return next();
   if (p.startsWith('/logs')) return next();
+  if (p.startsWith('/api/stats/dashboard')) return next(); // Dashboard é muito acessado
   if (p.startsWith('/api/auth/login') || p.startsWith('/api/auth/verify') || p.startsWith('/api/auth/config')) return next();
   return limiter(req, res, next);
 });

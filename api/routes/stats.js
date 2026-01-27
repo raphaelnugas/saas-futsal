@@ -41,8 +41,21 @@ router.get('/card-gold', async (req, res) => {
   }
 });
 
+// Cache simples em memória (TTL: 60 segundos)
+const CACHE_TTL = 60 * 1000;
+let DASHBOARD_CACHE = {
+  data: null,
+  timestamp: 0
+};
+
 // Estatísticas gerais do sistema
 router.get('/dashboard', async (req, res) => {
+  const now = Date.now();
+  // Se o cache for válido e não houver query params que mudem o contexto (dashboard é global), retorna cache
+  if (DASHBOARD_CACHE.data && (now - DASHBOARD_CACHE.timestamp < CACHE_TTL)) {
+    return res.json(DASHBOARD_CACHE.data);
+  }
+
   try {
     const result = await query(`
       SELECT 
@@ -148,14 +161,22 @@ router.get('/dashboard', async (req, res) => {
       LIMIT 3
     `);
 
-    res.json({
+    const responseData = {
       general: stats,
       teamGoals: teamStatsResult.rows,
       recentMatches: recentMatchesResult.rows,
       topScorers: topScorersResult.rows,
       topAssisters: topAssistersResult.rows,
       topGoalkeepers: topGoalkeepersResult.rows
-    });
+    };
+
+    // Atualiza cache
+    DASHBOARD_CACHE = {
+      data: responseData,
+      timestamp: Date.now()
+    };
+
+    res.json(responseData);
 
   } catch (error) {
     logger.error('Erro ao buscar estatísticas do dashboard', { error: error.message, requestId: req.id });

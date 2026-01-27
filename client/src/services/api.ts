@@ -40,24 +40,46 @@ api.interceptors.request.use(
   }
 )
 
-// Response interceptor
+// Retry logic with exponential backoff
 api.interceptors.response.use(
   (response) => {
     return response
   },
-  (error) => {
+  async (error) => {
+    const config = error.config
+    
+    // Configurações de retry
+    if (!config || !config.retry) {
+      config.retry = 0
+    }
+    
+    const MAX_RETRIES = 3
     const status = error.response?.status
+    
+    // Tenta retry apenas para erros de rede ou 429/5xx, exceto se já atingiu o limite
+    if ((!status || status === 429 || status >= 500) && config.retry < MAX_RETRIES) {
+      config.retry += 1
+      
+      // Backoff exponencial: 1s, 2s, 4s... com jitter aleatório
+      const backoff = Math.pow(2, config.retry) * 1000
+      const jitter = Math.random() * 1000
+      const delay = backoff + jitter
+      
+      console.warn(`[api:retry] Tentativa ${config.retry}/${MAX_RETRIES} para ${config.url} em ${Math.round(delay)}ms. Status: ${status || 'network'}`)
+      
+      await new Promise(resolve => setTimeout(resolve, delay))
+      return api(config)
+    }
+
     if (status === 401) {
       const url = error.config?.url || ''
-      // Evitar queda de login automática em chamadas não relacionadas à autenticação
-      // Somente redireciona se a verificação de sessão falhar explicitamente
       if (url.includes('/api/auth/verify') || url.includes('/api/auth/login')) {
         localStorage.removeItem('token')
         window.location.href = '/login'
       }
     }
     if (status === 429) {
-      console.warn('[api:429]', { url: error.config?.url, method: error.config?.method })
+      console.warn('[api:429] Rate limit exceeded', { url: error.config?.url, method: error.config?.method })
     } else {
       logError('api_response_error', {
         status,

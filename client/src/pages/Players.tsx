@@ -402,6 +402,7 @@ const Players: React.FC = () => {
     goals_per_sunday: number
     last_goals: number
     last_assists: number
+    trend?: 'up' | 'down' | 'neutral'
   }
   const [showGeneralStats, setShowGeneralStats] = useState(false)
   const [generalStatsLoading, setGeneralStatsLoading] = useState(false)
@@ -448,6 +449,7 @@ const Players: React.FC = () => {
         games_drawn: number
         sundays_played: number
         goals_per_sunday: number
+        trend?: 'up' | 'down' | 'neutral'
       }> : []
       const sundaysList = Array.isArray(sundaysResp.data?.sundays) ? sundaysResp.data.sundays as Array<{ sunday_id: number; date: string; finished_matches?: number; craque_player_id?: number | null }> : []
       const craquesMap = new Map<number, number>()
@@ -657,6 +659,7 @@ const Players: React.FC = () => {
           goals_per_sunday: Number(d.goals_per_sunday || 0),
           last_goals: Number(lastGoalsMap.get(Number(d.player_id)) || 0),
           last_assists: Number(lastAssistsMap.get(Number(d.player_id)) || 0),
+          trend: d.trend || 'neutral'
         }
       })
       
@@ -744,6 +747,13 @@ const Players: React.FC = () => {
         if (r.rank_change > 0) arrow = `<span style="color: #16a34a; font-size: 10px;">▲ ${r.rank_change}</span>`
         if (r.rank_change < 0) arrow = `<span style="color: #dc2626; font-size: 10px;">▼ ${Math.abs(r.rank_change)}</span>`
         
+        let trendArrow = ''
+        if (tableMode === 'defensores' && r.trend && r.trend !== 'neutral') {
+           const color = r.trend === 'up' ? '#16a34a' : '#dc2626'
+           const symbol = r.trend === 'up' ? '▲' : '▼'
+           trendArrow = `<span style="color: ${color}; margin-left: 4px; font-size: 10px;">${symbol}</span>`
+        }
+
         html += `
           <tr style="background-color: ${bg}; border-bottom: 1px solid #e5e7eb;">
             <td style="padding: 8px; text-align: center; font-weight: bold; color: #4b5563;">${r.rank}º</td>
@@ -752,7 +762,7 @@ const Players: React.FC = () => {
             </td>
             <td style="padding: 8px; text-align: center;">${r.goals}</td>
             <td style="padding: 8px; text-align: center;">${r.assists}</td>
-            <td style="padding: 8px; text-align: center;">${Number(r.goals_conceded_per_game).toFixed(2)}</td>
+            <td style="padding: 8px; text-align: center;">${Number(r.goals_conceded_per_game).toFixed(2)}${trendArrow}</td>
             <td style="padding: 8px; text-align: center;">${r.clean_sheets}</td>
             <td style="padding: 8px; text-align: center;">${r.craques}</td>
             <td style="padding: 8px; text-align: center;">${r.sundays}</td>
@@ -1162,7 +1172,14 @@ const Players: React.FC = () => {
                               </td>
                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.goals}</td>
                                <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.assists}</td>
-                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{Number(r.goals_conceded_per_game).toFixed(2)}</td>
+                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">
+                                {Number(r.goals_conceded_per_game).toFixed(2)}
+                                {tableMode === 'defensores' && r.trend && r.trend !== 'neutral' && (
+                                  <span className={`ml-1 inline-flex ${r.trend === 'up' ? 'text-green-600' : 'text-red-600'}`} title={r.trend === 'up' ? 'Melhorou defesa' : 'Piorou defesa'}>
+                                    {r.trend === 'up' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                                  </span>
+                                )}
+                               </td>
                                <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.clean_sheets}</td>
                                <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.craques}</td>
                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.sundays}</td>

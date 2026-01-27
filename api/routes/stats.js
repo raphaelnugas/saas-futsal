@@ -377,14 +377,44 @@ router.get('/players/detailed', async (req, res) => {
           NULLIF((
             SELECT COUNT(*) FROM game_sundays gs2 WHERE EXTRACT(YEAR FROM gs2.date) = EXTRACT(YEAR FROM CURRENT_DATE)
           ), 0)
-        ), 0)::float8 as gk_sunday_participation_pct_year
+        ), 0)::float8 as gk_sunday_participation_pct_year,
+        ROUND(
+          COALESCE((
+            SELECT AVG(CASE WHEN mp3.team = 'orange' THEN m3.team_black_score ELSE m3.team_orange_score END)::numeric
+            FROM match_participants mp3
+            JOIN matches m3 ON mp3.match_id = m3.match_id
+            JOIN game_sundays gs3 ON m3.sunday_id = gs3.sunday_id
+            WHERE mp3.player_id = p.player_id
+              AND mp3.is_goalkeeper = true
+              AND m3.status = 'finished'
+              AND EXTRACT(YEAR FROM gs3.date) = EXTRACT(YEAR FROM CURRENT_DATE)
+              AND gs3.date < (SELECT MAX(date) FROM game_sundays)
+          ), 0), 2
+        ) as gk_avg_conceded_previous
       FROM players p
       ${whereClause}
       ORDER BY p.total_goals_scored DESC, p.total_assists DESC
     `, params);
 
+    // Calcular tendência (trend)
+    const playersWithTrend = result.rows.map(player => {
+      let trend = 'neutral';
+      if (player.gk_avg_conceded_year && player.gk_avg_conceded_previous) {
+        const current = parseFloat(player.gk_avg_conceded_year);
+        const previous = parseFloat(player.gk_avg_conceded_previous);
+        if (previous > 0) {
+          // Se a média atual for MENOR que a anterior, é bom (seta pra cima/verde)
+          // Se a média atual for MAIOR que a anterior, é ruim (seta pra baixo/vermelha)
+          // Usaremos 'up' para bom (melhorou defesa) e 'down' para ruim (piorou defesa)
+          if (current < previous) trend = 'up';
+          else if (current > previous) trend = 'down';
+        }
+      }
+      return { ...player, trend };
+    });
+
     res.json({
-      players: result.rows,
+      players: playersWithTrend,
       total: result.rows.length
     });
 

@@ -478,9 +478,29 @@ router.get('/:id/matches', async (req, res) => {
       ORDER BY m.match_number ASC
     `, [id]);
 
+    const matches = result.rows;
+    if (matches.length > 0) {
+      const matchIds = matches.map(m => m.match_id);
+      const partsRes = await query(`
+        SELECT match_id, player_id, team, is_goalkeeper 
+        FROM match_participants 
+        WHERE match_id = ANY($1)
+      `, [matchIds]);
+      
+      const partsMap = new Map();
+      for (const p of partsRes.rows) {
+        if (!partsMap.has(p.match_id)) partsMap.set(p.match_id, []);
+        partsMap.get(p.match_id).push(p);
+      }
+      
+      for (const m of matches) {
+        m.participants = partsMap.get(m.match_id) || [];
+      }
+    }
+
     res.json({
-      matches: result.rows,
-      total: result.rows.length
+      matches: matches,
+      total: matches.length
     });
 
   } catch (error) {

@@ -3,7 +3,6 @@ import { toast } from 'sonner'
 import { Plus, Play, RotateCcw, Trophy, Clock, Trash2 } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
-import type { AxiosInstance } from 'axios'
 import { useAuth } from '../hooks/useAuth'
 import { useMatchSocket } from '../hooks/useMatchSocket'
 import { useMatchTimer } from '../hooks/useMatchTimer'
@@ -53,20 +52,6 @@ interface StatEvent {
   is_own_goal: boolean
   event_type: 'goal' | 'substitution' | 'tie_decider'
 }
-
-type QueueGoal = {
-  matchId: number
-  payload: {
-    scorer_id?: number
-    assist_id?: number
-    team_scored: 'black' | 'orange'
-    is_own_goal: boolean
-    goal_minute: number
-  }
-  ts: number
-}
-
-type WebAudioWindow = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }
 
 const Matches: React.FC = () => {
   const [players, setPlayers] = useState<Player[]>([])
@@ -150,7 +135,7 @@ const Matches: React.FC = () => {
   const [editBlackScore, setEditBlackScore] = useState<string>('')
   const [editOrangeScore, setEditOrangeScore] = useState<string>('')
   
-  const { connectionStatus } = useMatchSocket({
+  const { connectionStatus, startPolling } = useMatchSocket({
     currentMatchId,
     matchInProgress,
     onMatchStatsUpdate: (stats) => setMatchStats(stats),
@@ -1228,61 +1213,6 @@ const Matches: React.FC = () => {
     // A lógica de tick foi movida para useMatchTimer
   }, [matchInProgress, currentMatch?.startTime])
 
-  const startPolling = async () => {
-    if (!currentMatchId) return
-    try {
-      console.info('[sse:poll-tick]', { partida: currentMatchId })
-      const statsResp = await api.get(`/api/matches/${currentMatchId}/stats`)
-      const stats = (statsResp.data?.stats || []) as StatEvent[]
-      setMatchStats(stats)
-      const blackGoals = stats.filter(ev => ev.event_type === 'goal' && ev.team_scored === 'black').length
-      const orangeGoals = stats.filter(ev => ev.event_type === 'goal' && ev.team_scored === 'orange').length
-      setCurrentMatch(prev => prev ? { ...prev, blackScore: blackGoals, orangeScore: orangeGoals } : prev)
-      const rawTicker = localStorage.getItem('matchTicker')
-      if (rawTicker) {
-        try {
-          const t = JSON.parse(rawTicker) as { startTime: string; blackScore: number; orangeScore: number }
-          t.blackScore = blackGoals
-          t.orangeScore = orangeGoals
-          localStorage.setItem('matchTicker', JSON.stringify(t))
-        } catch { void 0 }
-      }
-      try {
-        const det = await api.get(`/api/matches/${currentMatchId}`)
-        const st = det.data?.match?.status as string | undefined
-        const b = Number(det.data?.match?.team_black_score || blackGoals || 0)
-        const o = Number(det.data?.match?.team_orange_score || orangeGoals || 0)
-        const m = det.data?.match as { team_black_win_streak?: number, team_orange_win_streak?: number }
-        const pollBlack = Number(m?.team_black_win_streak || 0)
-        const pollOrange = Number(m?.team_orange_win_streak || 0)
-        setConsecutiveUnchanged({ black: Number(pollBlack), orange: Number(pollOrange) })
-        sseStatsRef.current.polls += 1
-        console.info('[streak:poll]', { partida: currentMatchId, preto: pollBlack, laranja: pollOrange, polls: sseStatsRef.current.polls })
-        if (st === 'finished') {
-          finishMatchRemote(b, o, 'Partida finalizada')
-        }
-      } catch { void 0 }
-    } catch { void 0 }
-  }
-
-  useEffect(() => {
-    const onlineHandler = () => {
-      try {
-        const rawQ = localStorage.getItem('matchGoalQueue')
-        if (rawQ && JSON.parse(rawQ).length) {
-          drainGoalQueue()
-        }
-      } catch { void 0 }
-    }
-    window.addEventListener('online', onlineHandler)
-    const i = setInterval(() => {
-      drainGoalQueue()
-    }, 5000)
-    return () => {
-      window.removeEventListener('online', onlineHandler)
-      clearInterval(i)
-    }
-  }, [currentMatchId, matchInProgress])
   useEffect(() => {
     // A lógica de SSE foi movida para useMatchSocket.
     // Este useEffect vazio é mantido temporariamente para garantir que não quebramos a estrutura

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { Plus, Edit, Trash2, User, Search, BarChart3, Download, XCircle, LineChart, Share2, ArrowUp, ArrowDown, Minus } from 'lucide-react'
+import { Plus, Edit, Trash2, User, Search, BarChart3, Download, XCircle, LineChart, Share2, ArrowUp, ArrowDown } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts'
@@ -413,11 +413,6 @@ const Players: React.FC = () => {
   // Novo estado para o modo de tabela
   type TableMode = 'artilharia' | 'assistentes' | 'defensores'
   const [tableMode, setTableMode] = useState<TableMode>('artilharia')
-
-  // Função auxiliar para calcular Média de Gols Sofridos por Jogo
-  const getGoalsConcededPerGame = (conceded: number, matches: number) => {
-    return matches > 0 ? conceded / matches : 0
-  }
 
   // Efeito para ajustar ordenação quando muda o modo
   useEffect(() => {

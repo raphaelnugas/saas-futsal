@@ -4,10 +4,9 @@ import {
   Line,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer 
 } from 'recharts'
 import { X } from 'lucide-react'
 import api from '../../services/api'

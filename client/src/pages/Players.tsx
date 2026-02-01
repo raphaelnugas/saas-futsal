@@ -412,7 +412,7 @@ const Players: React.FC = () => {
   const [generalSortAsc, setGeneralSortAsc] = useState(false)
   
   // Novo estado para o modo de tabela
-  type TableMode = 'artilharia' | 'assistentes' | 'defensores'
+  type TableMode = 'artilharia' | 'assistentes' | 'defensores' | 'goleiros'
   const [tableMode, setTableMode] = useState<TableMode>('artilharia')
 
   // Efeito para ajustar ordenação quando muda o modo
@@ -550,8 +550,8 @@ const Players: React.FC = () => {
 
       // Função de ordenação dinâmica baseada no modo
       const rankSort = (
-        a: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number}, 
-        b: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number}
+        a: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number, sundays: number, wins: number}, 
+        b: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number, sundays: number, wins: number}
       ) => {
         if (tableMode === 'artilharia') {
            // Gols > Assistências > Nome
@@ -574,6 +574,20 @@ const Players: React.FC = () => {
              return a.goals_conceded_per_game - b.goals_conceded_per_game // Menor é melhor
            
            if (b.clean_sheets !== a.clean_sheets) return b.clean_sheets - a.clean_sheets
+        } else if (tableMode === 'goleiros') {
+           // 1. Mais domingos (sundays) - DESC
+           if (b.sundays !== a.sundays) return b.sundays - a.sundays
+           // 2. Melhor MGS/J (goals_conceded_per_game) - ASC
+           if (Math.abs(a.goals_conceded_per_game - b.goals_conceded_per_game) > 0.001) 
+             return a.goals_conceded_per_game - b.goals_conceded_per_game
+           // 3. NG (Clean Sheets) - DESC
+           if (b.clean_sheets !== a.clean_sheets) return b.clean_sheets - a.clean_sheets
+           // 4. Número de vitórias (wins) - DESC
+           if (b.wins !== a.wins) return b.wins - a.wins
+           // 5. Gols - DESC
+           if (b.goals !== a.goals) return b.goals - a.goals
+           // 6. Assistências - DESC
+           if (b.assists !== a.assists) return b.assists - a.assists
         }
         return a.name.localeCompare(b.name)
       }
@@ -586,7 +600,9 @@ const Players: React.FC = () => {
         assists: Number(d.total_assists || 0),
         goals_conceded_per_game: Number(d.goals_conceded_per_game || 0),
         clean_sheets: Number(cleanSheetsMap.get(Number(d.player_id)) || 0),
-        matches: Number(d.total_games_played || 0)
+        matches: Number(d.total_games_played || 0),
+        sundays: Number(d.sundays_played || 0),
+        wins: Number(d.games_won || 0)
       })).sort(rankSort)
 
       const currentRankMap = new Map<number, number>()
@@ -621,7 +637,9 @@ const Players: React.FC = () => {
           assists: prevA,
           goals_conceded_per_game: prevAvgConceded,
           clean_sheets: prevClean,
-          matches: prevM
+          matches: prevM,
+          sundays: 0, // Simplificação: não estamos calculando domingos anteriores para ranking de goleiros na view de diff
+          wins: 0 // Simplificação
         }
       }).sort(rankSort)
 
@@ -677,13 +695,24 @@ const Players: React.FC = () => {
 
   // Ajuste na ordenação visual para respeitar o ranking quando a chave for padrão
   const sortedAndFilteredGeneralRows = generalStatsRows
-    .filter(r => r.name.toLowerCase().includes(generalFilter.toLowerCase()))
+    .filter(r => {
+      // Filtro de texto
+      const matchesSearch = r.name.toLowerCase().includes(generalFilter.toLowerCase())
+      
+      // Filtro específico para modo 'goleiros'
+      if (tableMode === 'goleiros') {
+        return matchesSearch && r.is_goalkeeper
+      }
+      
+      return matchesSearch
+    })
     .sort((a, b) => {
       // Se o usuário clicou para ordenar por outra coluna, respeita a coluna
       // Se não, respeita o ranking do modo atual
       if (generalSortKey === 'goals' && tableMode === 'artilharia') return a.rank - b.rank
       if (generalSortKey === 'assists' && tableMode === 'assistentes') return a.rank - b.rank
       if (generalSortKey === 'goals_conceded_per_game' && tableMode === 'defensores') return a.rank - b.rank
+      if (generalSortKey === 'sundays' && tableMode === 'goleiros') return a.rank - b.rank
       
       const va = a[generalSortKey]
       const vb = b[generalSortKey]
@@ -715,7 +744,10 @@ const Players: React.FC = () => {
       tempDiv.className = 'p-4 bg-white'
       
       // Construir HTML da tabela
-      const headerTitle = tableMode === 'defensores' ? 'Top Defensores' : `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
+      let headerTitle = `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
+      if (tableMode === 'defensores') headerTitle = 'Top Defensores'
+      if (tableMode === 'goleiros') headerTitle = 'TOP Goleiros'
+      
       let html = `
         <h2 style="text-align:center; font-size: 24px; margin-bottom: 20px; font-weight: bold; font-family: sans-serif; color: #111;">${headerTitle}</h2>
         <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;">
@@ -797,7 +829,9 @@ const Players: React.FC = () => {
       
       const fileName = `estatisticas_top25_${tableMode}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.png`
       const file = new File([blob], fileName, { type: 'image/png' })
-      const text = tableMode === 'defensores' ? 'Top Defensores' : `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
+      let text = `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
+      if (tableMode === 'defensores') text = 'Top Defensores'
+      if (tableMode === 'goleiros') text = 'TOP Goleiros'
       
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: text, text })
@@ -1046,10 +1080,21 @@ const Players: React.FC = () => {
                        setGeneralSortKey('goals_conceded_per_game')
                        setGeneralSortAsc(true)
                     }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'defensores' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    className={`px-4 py-2 text-sm font-medium border-l border-r border-gray-300 transition-colors ${tableMode === 'defensores' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Defensores"
                   >
                     Defensores
+                  </button>
+                  <button
+                    onClick={() => {
+                       setTableMode('goleiros')
+                       setGeneralSortKey('sundays')
+                       setGeneralSortAsc(false)
+                    }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'goleiros' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    title="Goleiros"
+                  >
+                    Goleiros
                   </button>
                 </div>
               </div>

@@ -652,9 +652,39 @@ const Players: React.FC = () => {
       for (const pl of players) baseMap.set(pl.id, { name: pl.name, is_goalkeeper: pl.is_goalkeeper })
       const rows: GeneralStatsRow[] = detailed.map(d => {
         const pid = Number(d.player_id)
-        const curRank = currentRankMap.get(pid) || 999
-        const preRank = prevRankMap.get(pid) || 999
-        const change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
+        
+        // Se estiver no modo goleiros, recalculamos o ranking apenas entre eles
+        let curRank = currentRankMap.get(pid) || 999
+        let preRank = prevRankMap.get(pid) || 999
+        let change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
+
+        if (tableMode === 'goleiros') {
+           // Recalcular rankings apenas para goleiros
+           const isGk = !!(baseMap.get(Number(d.player_id))?.is_goalkeeper || d.is_goalkeeper)
+           if (isGk) {
+             // Filtrar e ordenar apenas goleiros para ranking atual
+             const currentGks = currentStatsList.filter(p => {
+                const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
+                return pIsGk
+             })
+             const myCurIndex = currentGks.findIndex(p => p.id === pid)
+             curRank = myCurIndex >= 0 ? myCurIndex + 1 : 999
+
+             // Filtrar e ordenar apenas goleiros para ranking anterior
+             const prevGks = prevStatsList.filter(p => {
+                const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
+                return pIsGk
+             })
+             const myPrevIndex = prevGks.findIndex(p => p.id === pid)
+             preRank = myPrevIndex >= 0 ? myPrevIndex + 1 : 999
+             
+             change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
+           } else {
+             curRank = 999
+             preRank = 999
+             change = 0
+           }
+        }
 
         return {
           player_id: Number(d.player_id),

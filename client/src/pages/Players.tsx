@@ -715,8 +715,9 @@ const Players: React.FC = () => {
       tempDiv.className = 'p-4 bg-white'
       
       // Construir HTML da tabela
+      const headerTitle = tableMode === 'defensores' ? 'Top Defensores' : `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
       let html = `
-        <h2 style="text-align:center; font-size: 24px; margin-bottom: 20px; font-weight: bold; font-family: sans-serif; color: #111;">Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}</h2>
+        <h2 style="text-align:center; font-size: 24px; margin-bottom: 20px; font-weight: bold; font-family: sans-serif; color: #111;">${headerTitle}</h2>
         <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;">
           <thead>
             <tr style="background-color: #f3f4f6; border-bottom: 2px solid #e5e7eb;">
@@ -796,10 +797,10 @@ const Players: React.FC = () => {
       
       const fileName = `estatisticas_top25_${tableMode}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.png`
       const file = new File([blob], fileName, { type: 'image/png' })
-      const text = `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
+      const text = tableMode === 'defensores' ? 'Top Defensores' : `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
       
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Top 25 Jogadores', text })
+        await navigator.share({ files: [file], title: text, text })
       } else {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')

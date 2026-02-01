@@ -1091,7 +1091,8 @@ const Players: React.FC = () => {
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'artilharia' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Artilharia"
                   >
-                    Artilheiros
+                    <span className="md:hidden">Art.</span>
+                    <span className="hidden md:inline">Artilheiros</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1102,7 +1103,8 @@ const Players: React.FC = () => {
                     className={`px-4 py-2 text-sm font-medium border-l border-r border-gray-300 transition-colors ${tableMode === 'assistentes' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Assistentes"
                   >
-                    Assistentes
+                    <span className="md:hidden">Ass.</span>
+                    <span className="hidden md:inline">Assistentes</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1113,7 +1115,8 @@ const Players: React.FC = () => {
                     className={`px-4 py-2 text-sm font-medium border-l border-r border-gray-300 transition-colors ${tableMode === 'defensores' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Defensores"
                   >
-                    Defensores
+                    <span className="md:hidden">Def.</span>
+                    <span className="hidden md:inline">Defensores</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1124,7 +1127,8 @@ const Players: React.FC = () => {
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'goleiros' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Goleiros"
                   >
-                    Goleiros
+                    <span className="md:hidden">Gol.</span>
+                    <span className="hidden md:inline">Goleiros</span>
                   </button>
                 </div>
               </div>

@@ -95,6 +95,8 @@ const Players: React.FC = () => {
     height_cm: '',
     birthdate_str: ''
   })
+  const [profilePhotoFileName, setProfilePhotoFileName] = useState('Nenhuma foto')
+  const [cardPhotoFileName, setCardPhotoFileName] = useState('Nenhuma foto')
 
   const maskBirthdate = (s: string) => {
     const digits = s.replace(/\D/g, '').slice(0, 8)
@@ -270,6 +272,8 @@ const Players: React.FC = () => {
       setShowForm(false)
       setEditingPlayer(null)
       setFormData({ name: '', photo_url: '', is_goalkeeper: false, photo_base64: '', photo_mime: '', photo2_base64: '', photo2_mime: '', remove_photo: false, remove_photo2: false, dominant_foot: '', height_cm: '', birthdate_str: '' })
+      setProfilePhotoFileName('Nenhuma foto')
+      setCardPhotoFileName('Nenhuma foto')
       fetchPlayers()
     } catch (error: unknown) {
       const msg =
@@ -282,6 +286,8 @@ const Players: React.FC = () => {
 
   const handleEdit = async (player: Player) => {
     setEditingPlayer(player)
+    setProfilePhotoFileName('Nenhuma foto')
+    setCardPhotoFileName('Nenhuma foto')
     try {
       const res = await api.get(`/api/players/${player.id}`)
       const p = res.data?.player || {}
@@ -1474,9 +1480,18 @@ const Players: React.FC = () => {
                 />
               </div>
               <div>
-                <label htmlFor="photo_file" className="block text-sm font-medium text-gray-700">
-                  Upload de Foto (opcional) — suporta JPG, PNG e WebP
+                <label className="block text-sm font-medium text-gray-700">
+                  Upload de Foto de Perfil
                 </label>
+                <div className="mt-1 flex items-center gap-3">
+                  <label
+                    htmlFor="photo_file"
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
+                  >
+                    Escolher
+                  </label>
+                  <span className="text-sm text-gray-600 truncate">{profilePhotoFileName}</span>
+                </div>
                 <input
                   type="file"
                   id="photo_file"
@@ -1485,8 +1500,10 @@ const Players: React.FC = () => {
                     const file = e.target.files?.[0]
                     if (!file) {
                       setFormData({ ...formData, photo_base64: '', photo_mime: '' })
+                      setProfilePhotoFileName('Nenhuma foto')
                       return
                     }
+                    setProfilePhotoFileName(file.name)
                     setOriginalMime(file.type || 'image/jpeg')
                     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
                       const reader = new FileReader()
@@ -1506,7 +1523,7 @@ const Players: React.FC = () => {
                     setCropPos({ x: 0, y: 0 })
                     setCropOpen(true)
                   }}
-                  className="mt-1 block w-full text-sm text-gray-700"
+                  className="sr-only"
                 />
                 {editingPlayer && (
                   <div className="mt-2">
@@ -1524,9 +1541,18 @@ const Players: React.FC = () => {
                 )}
               </div>
               <div>
-                <label htmlFor="photo2_file" className="block text-sm font-medium text-gray-700">
-                  Upload de Foto Detalhada (imagem 2)
+                <label className="block text-sm font-medium text-gray-700">
+                  Upload de Foto de Card
                 </label>
+                <div className="mt-1 flex items-center gap-3">
+                  <label
+                    htmlFor="photo2_file"
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer"
+                  >
+                    Escolher
+                  </label>
+                  <span className="text-sm text-gray-600 truncate">{cardPhotoFileName}</span>
+                </div>
                 <input
                   type="file"
                   id="photo2_file"
@@ -1535,8 +1561,10 @@ const Players: React.FC = () => {
                     const file = e.target.files?.[0]
                     if (!file) {
                       setFormData({ ...formData, photo2_base64: '', photo2_mime: '' })
+                      setCardPhotoFileName('Nenhuma foto')
                       return
                     }
+                    setCardPhotoFileName(file.name)
                     setOriginalMime2(file.type || 'image/jpeg')
                     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
                       const reader = new FileReader()
@@ -1556,7 +1584,7 @@ const Players: React.FC = () => {
                     setCrop2Pos({ x: 0, y: 0 })
                     setCrop2Open(true)
                   }}
-                  className="mt-1 block w-full text-sm text-gray-700"
+                  className="sr-only"
                 />
                 {editingPlayer && (
                   <div className="mt-2">
@@ -1642,6 +1670,8 @@ const Players: React.FC = () => {
                     setShowForm(false)
                     setEditingPlayer(null)
                     setFormData({ name: '', photo_url: '', is_goalkeeper: false, photo_base64: '', photo_mime: '', photo2_base64: '', photo2_mime: '', remove_photo: false, remove_photo2: false, dominant_foot: '', height_cm: '', birthdate_str: '' })
+                    setProfilePhotoFileName('Nenhuma foto')
+                    setCardPhotoFileName('Nenhuma foto')
                   }}
                   className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >

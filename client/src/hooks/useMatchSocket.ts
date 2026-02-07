@@ -258,11 +258,6 @@ export const useMatchSocket = ({
             const b = Number(data.blackScore || 0)
             const o = Number(data.orangeScore || 0)
             onFinishRemote(b, o)
-            
-            // Força um refresh da página após 2 segundos para limpar qualquer estado visual travado
-            setTimeout(() => {
-              window.location.reload()
-            }, 2000)
           }
         } catch { void 0 }
       })

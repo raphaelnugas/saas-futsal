@@ -107,12 +107,14 @@ const AuditModal: React.FC<AuditModalProps> = ({
 
         <div className="flex justify-between space-x-3">
           <button
+            type="button"
             onClick={onClose}
             className="flex-1 px-4 py-3 rounded-md shadow-sm text-sm font-bold text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
           >
             CANCELAR
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             className="flex-1 px-4 py-3 rounded-md shadow-sm text-sm font-bold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
           >

@@ -4,6 +4,7 @@ const { query, transaction } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const fs = require('fs');
 const path = require('path');
+const { computeNextWinStreak } = require('../utils/winStreakRules');
 
 const router = express.Router();
 
@@ -399,8 +400,24 @@ router.post('/:id/teams', async (req, res) => {
     }
 
     const players = playersResult.rows;
-    const maxPlayersPerTeam = parseInt(process.env.MAX_PLAYERS_PER_TEAM) || 5;
+    let maxPlayersPerTeam = parseInt(process.env.MAX_PLAYERS_PER_TEAM) || 5;
+    try {
+      const configRes = await query(`
+        SELECT max_players_per_team
+        FROM system_config
+        ORDER BY config_id DESC
+        LIMIT 1
+      `);
+      const cfg = Number(configRes.rows[0]?.max_players_per_team || 0);
+      if (!Number.isNaN(cfg) && cfg >= 1) maxPlayersPerTeam = cfg;
+    } catch {}
     const totalPlayers = Math.min(players.length, maxPlayersPerTeam * 2);
+    if (players.length < maxPlayersPerTeam * 2) {
+      return res.status(400).json({
+        error: 'Jogadores insuficientes',
+        message: `Não é possível iniciar partida sem times completos. São necessários ${maxPlayersPerTeam * 2} jogadores (times de ${maxPlayersPerTeam}). Atualmente há ${players.length} jogadores presentes.`
+      });
+    }
 
     // Determinar se o time vencedor anterior deve "sair" quando há muitos jogadores
     let selectedPlayers = players.slice();
@@ -440,6 +457,12 @@ router.post('/:id/teams', async (req, res) => {
 
     // Sortear times
     const { orangeTeam, blackTeam } = sortTeams(selectedPlayers);
+    if (orangeTeam.length !== maxPlayersPerTeam || blackTeam.length !== maxPlayersPerTeam) {
+      return res.status(400).json({
+        error: 'Times incompletos',
+        message: `Não é possível iniciar partida sem times completos. Times precisam ter ${maxPlayersPerTeam} jogadores cada.`
+      });
+    }
 
     // Iniciar transação para salvar times
     await transaction(async (client) => {
@@ -551,6 +574,41 @@ router.post('/:id/participants', [
     }
     const { id } = req.params;
     const { black_team, orange_team, prev_stay_team } = req.body;
+    let maxPlayersPerTeam = parseInt(process.env.MAX_PLAYERS_PER_TEAM) || 5;
+    try {
+      const configRes = await query(`
+        SELECT max_players_per_team
+        FROM system_config
+        ORDER BY config_id DESC
+        LIMIT 1
+      `);
+      const cfg = Number(configRes.rows[0]?.max_players_per_team || 0);
+      if (!Number.isNaN(cfg) && cfg >= 1) maxPlayersPerTeam = cfg;
+    } catch {}
+    const blackIds = Array.isArray(black_team) ? black_team.map((v) => Number(v)) : [];
+    const orangeIds = Array.isArray(orange_team) ? orange_team.map((v) => Number(v)) : [];
+    const blackSet = new Set(blackIds);
+    const orangeSet = new Set(orangeIds);
+    if (blackIds.length !== maxPlayersPerTeam || orangeIds.length !== maxPlayersPerTeam) {
+      return res.status(400).json({
+        error: 'Times incompletos',
+        message: `Não é possível iniciar partida sem times completos. Times precisam ter ${maxPlayersPerTeam} jogadores cada.`
+      });
+    }
+    if (blackSet.size !== blackIds.length || orangeSet.size !== orangeIds.length) {
+      return res.status(400).json({
+        error: 'Jogadores duplicados',
+        message: 'Há jogadores repetidos dentro de um dos times'
+      });
+    }
+    for (const pid of blackSet) {
+      if (orangeSet.has(pid)) {
+        return res.status(400).json({
+          error: 'Jogadores duplicados',
+          message: 'O mesmo jogador não pode estar nos dois times'
+        });
+      }
+    }
 
     const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
     if (matchResult.rows.length === 0) {
@@ -560,13 +618,15 @@ router.post('/:id/participants', [
       });
     }
 
-    const allIds = Array.from(new Set([...(black_team || []), ...(orange_team || [])]));
-    if (allIds.length < 2) {
-      return res.status(400).json({ 
-        error: 'Jogadores insuficientes',
-        message: 'Forneça pelo menos 2 jogadores para definir os times'
+    const matchRow = matchResult.rows[0] || {};
+    if (String(matchRow.status || '') !== 'scheduled') {
+      return res.status(400).json({
+        error: 'Partida não pode ser iniciada',
+        message: 'Apenas partidas agendadas podem ser iniciadas'
       });
     }
+
+    const allIds = Array.from(new Set([...blackIds, ...orangeIds]));
 
     const playersResult = await query(`
       SELECT player_id, is_goalkeeper
@@ -595,7 +655,7 @@ router.post('/:id/participants', [
     await transaction(async (client) => {
       await client.query('DELETE FROM match_participants WHERE match_id = $1', [id]);
 
-      for (const pid of orange_team) {
+      for (const pid of orangeIds) {
         const isGk = !!playersById.get(pid).is_goalkeeper;
         await client.query(`
           INSERT INTO match_participants (match_id, player_id, team, is_goalkeeper)
@@ -603,7 +663,7 @@ router.post('/:id/participants', [
         `, [id, pid, isGk]);
       }
 
-      for (const pid of black_team) {
+      for (const pid of blackIds) {
         const isGk = !!playersById.get(pid).is_goalkeeper;
         await client.query(`
           INSERT INTO match_participants (match_id, player_id, team, is_goalkeeper)
@@ -663,34 +723,16 @@ router.post('/:id/participants', [
         }
       } catch {}
         
-      const isDrawPrev = prev.winner_team === 'draw';
-        if (isDrawPrev) {
-          // Se manyPresentRuleEnabled for true, ambos saem independentemente do número de jogadores.
-          // Se for false, respeita o vencedor do desempate (tieWinner).
-          const ruleEnforcesBothLeave = manyPresentRuleEnabled;
-          const tieWinnerCandidate = !ruleEnforcesBothLeave && (tieWinner === 'black' || tieWinner === 'orange') ? tieWinner : null;
-          
-          if (tieWinnerCandidate === 'black') {
-            nextBlackCounter = (blackPrevCounter + 1 >= 3) ? 0 : (blackPrevCounter + 1);
-            nextOrangeCounter = 0;
-          } else if (tieWinnerCandidate === 'orange') {
-            nextOrangeCounter = (orangePrevCounter + 1 >= 3) ? 0 : (orangePrevCounter + 1);
-            nextBlackCounter = 0;
-          } else {
-            nextBlackCounter = 0;
-            nextOrangeCounter = 0;
-          }
-        } else if (prev.winner_team === 'black' || prev.winner_team === 'orange') {
-          // Se o time já tinha 2 vitórias (visual: 3 dots) e ganhou a terceira, zera (saiu).
-          // Se não, incrementa (max 2 visualmente, mas backend armazena até resetar).
-          if (prev.winner_team === 'black') {
-            nextBlackCounter = (blackPrevCounter + 1 >= 3) ? 0 : (blackPrevCounter + 1);
-            nextOrangeCounter = 0;
-          } else {
-            nextOrangeCounter = (orangePrevCounter + 1 >= 3) ? 0 : (orangePrevCounter + 1);
-            nextBlackCounter = 0;
-          }
-        }
+      const next = computeNextWinStreak({
+        manyPresentRuleEnabled,
+        prevWinnerTeam: prev.winner_team,
+        prevTieDeciderWinner: tieWinner,
+        prevBlackWinStreak: blackPrevCounter,
+        prevOrangeWinStreak: orangePrevCounter,
+        threshold: 3
+      });
+      nextBlackCounter = next.nextBlack;
+      nextOrangeCounter = next.nextOrange;
       }
       await query(`UPDATE matches SET team_black_win_streak = $1, team_orange_win_streak = $2 WHERE match_id = $3`, [nextBlackCounter, nextOrangeCounter, id]);
       try { await broadcastTicker(id); } catch {}
@@ -700,8 +742,8 @@ router.post('/:id/participants', [
 
     res.json({
       message: 'Participantes definidos com sucesso',
-      black_team,
-      orange_team
+      black_team: blackIds,
+      orange_team: orangeIds
     });
 
   } catch (error) {

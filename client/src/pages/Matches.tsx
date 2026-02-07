@@ -79,6 +79,7 @@ const Matches: React.FC = () => {
   const [bench, setBench] = useState<Player[]>([])
   const [matchStats, setMatchStats] = useState<StatEvent[]>([])
   const [matchDurationMin, setMatchDurationMin] = useState<number>(10)
+  const [maxPlayersPerTeam, setMaxPlayersPerTeam] = useState<number>(5)
   const [submittingGoal, setSubmittingGoal] = useState<boolean>(false)
   const [alarmMuted, setAlarmMuted] = useState<boolean>(() => {
     try {
@@ -127,8 +128,10 @@ const Matches: React.FC = () => {
     match_date?: string
     black_score?: number
     orange_score?: number
+    tie_decider_winner?: 'black'|'orange'
   }>({ open: false, matchId: null, loading: false, stats: [], black_ids: [], orange_ids: [] })
   const [tieModal, setTieModal] = useState<{ open: boolean; winner: 'black'|'orange'|null }>(() => ({ open: false, winner: null }))
+  const [pendingTieDeciderMatchId, setPendingTieDeciderMatchId] = useState<number | null>(null)
   const [lastFinishedMatchId, setLastFinishedMatchId] = useState<number | null>(null)
   const [consecutiveUnchanged, setConsecutiveUnchanged] = useState<{ black: number; orange: number }>({ black: 0, orange: 0 })
   const { isAdmin } = useAuth()
@@ -163,6 +166,7 @@ const Matches: React.FC = () => {
   const [, setSelectedChallengers] = useState<number[]>([])
   const [rotationApplied, setRotationApplied] = useState<'gk'|'full'|null>(null)
   const [currentSundayDate, setCurrentSundayDate] = useState<string | undefined>(undefined)
+  const maxPlayersPerMatch = Math.max(2, Math.floor(maxPlayersPerTeam * 2))
   const dateOnly = (s: string | undefined): string | undefined => {
     const t = String(s || '')
     if (!t) return undefined
@@ -196,12 +200,13 @@ const Matches: React.FC = () => {
   const selectedCount = isFirstMatchToday 
     ? selectedPlayers.length 
     : teams.black.length + teams.orange.length
+  const isTieModalOpen = tieModal.open || pendingTieDeciderMatchId !== null
 
   useEffect(() => {
-    if (selectedCount >= 10 && startMatchButtonRef.current) {
+    if (selectedCount >= maxPlayersPerMatch && startMatchButtonRef.current) {
       startMatchButtonRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  }, [selectedCount])
+  }, [selectedCount, maxPlayersPerMatch])
 
   useEffect(() => {
     if (didRunConfigRef.current) return
@@ -211,6 +216,8 @@ const Matches: React.FC = () => {
         const res = await api.get('/api/auth/config')
         const md = Number(res.data?.matchDuration || 10)
         if (!Number.isNaN(md) && md > 0) setMatchDurationMin(md)
+        const mpt = Number(res.data?.maxPlayersPerTeam || 0)
+        if (!Number.isNaN(mpt) && mpt >= 1) setMaxPlayersPerTeam(mpt)
       } catch { void 0 }
     })()
   }, [])
@@ -300,6 +307,17 @@ const Matches: React.FC = () => {
       })
       setPlayers(playersList)
       setMatches(matchesList)
+      try {
+        const today = nextSundayDate()
+        const pending = matchesList.find(m => {
+          const md = dateOnly(m.match_date)
+          const isToday = !!today && !!md && md === today
+          const isDraw = (typeof m.winning_team === 'string' ? m.winning_team : 'draw') === 'draw'
+          const hasTieWinner = m.tie_decider_winner === 'black' || m.tie_decider_winner === 'orange'
+          return isToday && m.status === 'finished' && isDraw && !hasTieWinner
+        })
+        setPendingTieDeciderMatchId(pending?.id || null)
+      } catch { void 0 }
       try {
         const sundaysApi = (sundaysResponse.data?.sundays || []) as Array<{ sunday_id: number; date?: string }>
         if (sundaysApi.length > 0) {
@@ -418,12 +436,12 @@ const Matches: React.FC = () => {
       let next = prev
       if (isSelected) {
         next = prev.filter(id => id !== playerId)
-      } else if (prev.length < 10) {
+      } else if (prev.length < maxPlayersPerMatch) {
         next = [...prev, playerId]
       }
       
-      // Se selecionou o 10º jogador, faz scroll para o botão de sortear
-      if (!isSelected && next.length === 10) {
+      // Se selecionou o último jogador, faz scroll para o botão de sortear
+      if (!isSelected && next.length === maxPlayersPerMatch) {
         setTimeout(() => {
           sortButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }, 100)
@@ -434,7 +452,7 @@ const Matches: React.FC = () => {
   }
 
   const sortTeamsLocal = (list: Player[], overrideKeeperId?: number) => {
-    const maxPerTeam = 5
+    const maxPerTeam = maxPlayersPerTeam
     const goalkeepers = list.filter(p => p.position === 'Goleiro' && p.id !== overrideKeeperId)
     const fieldPlayers = list.filter(p => p.position !== 'Goleiro' || p.id === overrideKeeperId)
     const orange: Player[] = []
@@ -500,7 +518,7 @@ const Matches: React.FC = () => {
     const inBlack = teams.black.some(p => p.id === playerId)
     const inOrange = teams.orange.some(p => p.id === playerId)
     if (inBlack || inOrange) return
-    const maxPerTeam = 5
+    const maxPerTeam = maxPlayersPerTeam
     const target = team === 'black' ? teams.black : teams.orange
     if (target.length >= maxPerTeam) {
       toast.error(team === 'black' ? 'Time preto cheio' : 'Time laranja cheio')
@@ -579,7 +597,7 @@ const Matches: React.FC = () => {
         return
       }
       const isDraw = (typeof last.winning_team === 'string' ? last.winning_team : 'draw') === 'draw'
-      if (isDraw && presentCountAll > 17) {
+      if (isDraw && manyPresentRuleEnabled) {
         setRodizioMode(false)
         setRodizioWinnerColor(null)
         setSelectedPlayers([])
@@ -705,8 +723,8 @@ const Matches: React.FC = () => {
   }
 
   const startMatch = async () => {
-    if (teams.black.length === 0 || teams.orange.length === 0) {
-      toast.error('Sorteie os times primeiro')
+    if (teams.black.length !== maxPlayersPerTeam || teams.orange.length !== maxPlayersPerTeam) {
+      toast.error(`Não é possível iniciar com times incompletos (${maxPlayersPerTeam}x${maxPlayersPerTeam})`)
       return
     }
 
@@ -797,8 +815,9 @@ const Matches: React.FC = () => {
       setSelectedChallengers([])
       setSelectedPlayers([])
     } catch (e: unknown) {
-      toast.error('Erro ao iniciar partida')
-      const err = e as { response?: { status?: number }, message?: string }
+      const err = e as { response?: { status?: number; data?: { message?: string } }, message?: string }
+      const serverMessage = err?.response?.data?.message
+      toast.error(serverMessage || 'Erro ao iniciar partida')
       logError('start_match_error', { status: err?.response?.status, message: err?.message })
     }
   }
@@ -814,6 +833,8 @@ const Matches: React.FC = () => {
         if (typeof resp.data?.manyPresentRuleEnabled === 'boolean') {
           setManyPresentRuleEnabled(resp.data.manyPresentRuleEnabled)
         }
+        const mpt = Number(resp.data?.maxPlayersPerTeam || 0)
+        if (!Number.isNaN(mpt) && mpt >= 1) setMaxPlayersPerTeam(mpt)
       } catch (error) {
         console.error('Erro ao carregar configurações:', error)
       }
@@ -902,7 +923,8 @@ const Matches: React.FC = () => {
 
   const confirmFinishMatch = async () => {
     if (!currentMatch) return
-    const cleanup = (message = 'Partida finalizada com sucesso!') => {
+    const isDraw = currentMatch.blackScore === currentMatch.orangeScore
+    const cleanup = (message = 'Partida finalizada com sucesso!', deferFetch = false) => {
       toast.success(message)
       setMatchInProgress(false)
       setCurrentMatch(null)
@@ -917,14 +939,14 @@ const Matches: React.FC = () => {
       localStorage.removeItem('matchAlarmMuted')
       localStorage.removeItem('matchGoalQueue')
       setAuditModalOpen(false)
-      fetchData()
+      if (!deferFetch) fetchData()
     }
  
     try {
       if (!currentMatchId) {
         // Sem ID (por exemplo, a partida foi excluída): encerrar localmente
         setLastFinishedMatchId((prev) => prev)
-        cleanup('Partida finalizada localmente')
+        cleanup('Partida finalizada localmente', isDraw)
         // preparar próxima partida com rotação de perdedor
         prepareNextTeamsRotation(currentMatch.blackScore, currentMatch.orangeScore)
         return
@@ -950,8 +972,7 @@ const Matches: React.FC = () => {
         orange_score: currentMatch.orangeScore,
         played_ids: finalPlayed
       })
- 
-      cleanup('Partida finalizada com sucesso!')
+      cleanup('Partida finalizada com sucesso!', isDraw)
       prepareNextTeamsRotation(currentMatch.blackScore, currentMatch.orangeScore)
     } catch (error: unknown) {
       const err = error as { response?: { status?: number } }
@@ -959,7 +980,7 @@ const Matches: React.FC = () => {
       if (code) {
         logError('finish_match_error', { status: code })
       }
-      cleanup('Partida finalizada localmente (erro ao sincronizar com o servidor)')
+      cleanup('Partida finalizada localmente (erro ao sincronizar com o servidor)', isDraw)
       prepareNextTeamsRotation(currentMatch.blackScore, currentMatch.orangeScore)
     }
   }
@@ -1058,6 +1079,7 @@ const Matches: React.FC = () => {
   const finishMatchRemote = (blackScore: number, orangeScore: number, message?: string) => {
     const msg = message || 'Partida finalizada'
     toast.success(msg)
+    const isDraw = blackScore === orangeScore
     setMatchInProgress(false)
     setCurrentMatch(null)
     setCurrentMatchId(null)
@@ -1070,7 +1092,7 @@ const Matches: React.FC = () => {
     localStorage.removeItem('matchLiveStats')
     localStorage.removeItem('matchAlarmMuted')
     localStorage.removeItem('matchGoalQueue')
-    fetchData()
+    if (!isDraw) fetchData()
     prepareNextTeamsRotation(blackScore, orangeScore)
   }
 
@@ -1084,7 +1106,8 @@ const Matches: React.FC = () => {
       orange_ids: [],
       match_date: match.match_date,
       black_score: match.team_blue_score,
-      orange_score: match.team_orange_score
+      orange_score: match.team_orange_score,
+      tie_decider_winner: match.tie_decider_winner
     })
     try {
       const [statsResp, detailsResp] = await Promise.all([
@@ -1102,7 +1125,10 @@ const Matches: React.FC = () => {
         loading: false,
         stats,
         black_ids: blackIds,
-        orange_ids: orangeIds
+        orange_ids: orangeIds,
+        tie_decider_winner: detailsResp.data?.match?.tie_decider_winner === 'black' || detailsResp.data?.match?.tie_decider_winner === 'orange'
+          ? detailsResp.data.match.tie_decider_winner
+          : prev.tie_decider_winner
       }))
     } catch {
       setDetailsModal(prev => ({ ...prev, loading: false }))
@@ -1635,7 +1661,7 @@ const Matches: React.FC = () => {
         </div>
       )}
       
-      {tieModal.open && (
+      {isTieModalOpen && (
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Empate — Quem ganhou no par ou ímpar?</h3>
@@ -1649,12 +1675,14 @@ const Matches: React.FC = () => {
             )}
             <div className="flex items-center space-x-4">
               <button
+                type="button"
                 onClick={() => setTieModal({ open: true, winner: 'black' })}
                 className={`px-4 py-2 rounded-md text-sm font-medium ${tieModal.winner === 'black' ? 'bg-black text-white' : 'bg-gray-100 text-gray-900'}`}
               >
                 Preto
               </button>
               <button
+                type="button"
                 onClick={() => setTieModal({ open: true, winner: 'orange' })}
                 className={`px-4 py-2 rounded-md text-sm font-medium ${tieModal.winner === 'orange' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-900'}`}
               >
@@ -1663,77 +1691,83 @@ const Matches: React.FC = () => {
             </div>
             <div className="flex justify-end mt-6">
                 <button
+                  type="button"
                   onClick={async () => {
                     const stay = tieModal.winner
                     if (!stay) {
                       toast.error('Selecione o time vencedor')
                       return
                     }
-                    const presentIds = Object.keys(presentMap).filter(id => presentMap[Number(id)]).map(Number)
-                    const presentCount = presentIds.length
-                    if (lastFinishedMatchId) {
-                      try {
-                        await api.post(`/api/matches/${lastFinishedMatchId}/tie-decider`, { winner: stay })
-                      } catch { void 0 }
+                    const tieMatchId = pendingTieDeciderMatchId || lastFinishedMatchId
+                    if (!tieMatchId) {
+                      toast.error('Não foi possível identificar a partida para registrar o desempate')
+                      return
                     }
-                    lastWinnerRef.current = {
-                      black: stay === 'black' ? teams.black.map(p => p.id) : lastWinnerRef.current.black,
-                      orange: stay === 'orange' ? teams.orange.map(p => p.id) : lastWinnerRef.current.orange
+                    let finishedBlack: Player[] = teams.black
+                    let finishedOrange: Player[] = teams.orange
+                    let blackStreak = Number(consecutiveUnchanged.black || 0)
+                    let orangeStreak = Number(consecutiveUnchanged.orange || 0)
+                    try {
+                      const det = await api.get(`/api/matches/${tieMatchId}`)
+                      const match = det.data?.match as { participants?: Array<{ team: 'black'|'orange'; player_id: number }>, team_black_win_streak?: number, team_orange_win_streak?: number }
+                      const parts: Array<{ team: 'black'|'orange'; player_id: number }> = Array.isArray(match?.participants) ? match.participants : []
+                      if (parts.length) {
+                        const blackIds = parts.filter(p => p.team === 'black').map(p => p.player_id)
+                        const orangeIds = parts.filter(p => p.team === 'orange').map(p => p.player_id)
+                        finishedBlack = players.filter(p => blackIds.includes(p.id))
+                        finishedOrange = players.filter(p => orangeIds.includes(p.id))
+                      }
+                      blackStreak = Number(match?.team_black_win_streak || blackStreak)
+                      orangeStreak = Number(match?.team_orange_win_streak || orangeStreak)
+                    } catch { void 0 }
+                    try {
+                      await api.post(`/api/matches/${tieMatchId}/tie-decider`, { winner: stay })
+                      setMatches(prev => prev.map(m => m.id === tieMatchId ? { ...m, tie_decider_winner: stay, winning_team: 'draw' } : m))
+                      setDetailsModal(prev => (prev.matchId === tieMatchId ? { ...prev, tie_decider_winner: stay } : prev))
+                      setPendingTieDeciderMatchId(null)
+                    } catch {
+                      toast.error('Falha ao registrar vencedor do par/ímpar')
+                      return
                     }
-                    setTieModal({ open: false, winner: null })
-                    if (presentCount > 17) {
-                      const leavingIdsAll = [...teams.black.map(p => p.id), ...teams.orange.map(p => p.id)]
-                      const newBenchIds = Array.from(new Set<number>([...bench.map(p => p.id), ...leavingIdsAll]))
+                    toast.success(`Desempate registrado: ${stay === 'black' ? 'Preto' : 'Laranja'} venceu no par/ímpar`)
+                    if (manyPresentRuleEnabled) {
                       setTeams({ black: [], orange: [] })
-                      setBench(players.filter(p => newBenchIds.includes(p.id)))
-                      try {
-                        localStorage.setItem('matchTeams', JSON.stringify({ black: [], orange: [] }))
-                        localStorage.setItem('matchBench', JSON.stringify(newBenchIds))
-                      } catch { void 0 }
+                      setBench(players.filter(p => presentMap[p.id]))
                       setRodizioMode(false)
                       setSelectedPlayers([])
                       setSelectedChallengers([])
                       setShowForm(true)
+                      setTieModal({ open: false, winner: null })
                       toast.success('Empate com muitos presentes: ambos os times saem.')
+                      try { fetchData() } catch { void 0 }
                       return
                     }
-                    const countStay = Math.max(0, Math.floor(consecutiveUnchanged[stay] || 0))
-                    if (countStay >= 2) {
-                      const leaveSide = stay
-                      const staySide = leaveSide === 'black' ? 'orange' : 'black'
-                      const leavingIds = teams[leaveSide].map(p => p.id)
-                      const newBenchIds = Array.from(new Set<number>([...bench.map(p => p.id), ...leavingIds]))
-                      const newTeams = { black: leaveSide === 'black' ? [] : teams.black, orange: leaveSide === 'orange' ? [] : teams.orange }
-                      setTeams(newTeams)
-                      setBench(players.filter(p => newBenchIds.includes(p.id)))
-                      try {
-                        localStorage.setItem('matchTeams', JSON.stringify({ black: newTeams.black.map(p => p.id), orange: newTeams.orange.map(p => p.id) }))
-                        localStorage.setItem('matchBench', JSON.stringify(newBenchIds))
-                      } catch { void 0 }
-                      setRodizioMode(true)
-                      setRodizioWinnerColor(staySide)
-                      setSelectedChallengers([])
-                      setShowForm(true)
-                      toast.success('Terceiro empate vencido: vencedor sai. Selecione os desafiantes.')
-                      return
+                    const countStay = Math.max(0, Math.floor(stay === 'black' ? blackStreak : orangeStreak))
+                    const leaveSide: 'black'|'orange' = countStay >= 2 ? stay : (stay === 'black' ? 'orange' : 'black')
+                    const staySide: 'black'|'orange' = leaveSide === 'black' ? 'orange' : 'black'
+                    const nextTeams = {
+                      black: leaveSide === 'black' ? [] : finishedBlack,
+                      orange: leaveSide === 'orange' ? [] : finishedOrange
                     }
-                    const leaveSide = stay === 'black' ? 'orange' : 'black'
-                    const benchIdsAll = bench.map(p => p.id)
-                    const leavingIds = teams[leaveSide].map(p => p.id)
-                    const newBenchIds = Array.from(new Set<number>([...benchIdsAll, ...leavingIds]))
-                    const newTeams = { black: leaveSide === 'black' ? [] : teams.black, orange: leaveSide === 'orange' ? [] : teams.orange }
-                    setTeams(newTeams)
-                    const newBenchPlayers = players.filter(p => newBenchIds.includes(p.id))
-                    setBench(newBenchPlayers)
-                    try {
-                      localStorage.setItem('matchTeams', JSON.stringify({ black: newTeams.black.map(p => p.id), orange: newTeams.orange.map(p => p.id) }))
-                      localStorage.setItem('matchBench', JSON.stringify(newBenchIds))
-                    } catch { void 0 }
+                    const nextTeamIds = new Set<number>([...nextTeams.black.map(p => p.id), ...nextTeams.orange.map(p => p.id)])
+                    setTeams(nextTeams)
+                    setBench(players.filter(p => presentMap[p.id] && !nextTeamIds.has(p.id)))
                     setRodizioMode(true)
-                    setRodizioWinnerColor(stay)
+                    setRodizioWinnerColor(countStay >= 2 ? staySide : stay)
                     setSelectedChallengers([])
                     setShowForm(true)
-                    toast.success('Empate: perdedor sai. Selecione os desafiantes manualmente.')
+                    setTieModal({ open: false, winner: null })
+                    lastWinnerRef.current = {
+                      black: stay === 'black' ? finishedBlack.map(p => p.id) : [],
+                      orange: stay === 'orange' ? finishedOrange.map(p => p.id) : []
+                    }
+                    if (countStay >= 2) {
+                      toast.success('Terceiro empate vencido: vencedor sai. Selecione os desafiantes.')
+                    } else {
+                      toast.success('Empate: perdedor sai. Selecione os desafiantes manualmente.')
+                    }
+                    try { fetchData() } catch { void 0 }
+                    return
                   }}
                   className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >
@@ -2065,7 +2099,7 @@ const Matches: React.FC = () => {
           
           {/* Player Selection */}
           <div className="mb-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-3">{rodizioMode ? 'Selecione os Desafiantes' : `Selecione os Jogadores (${selectedCount}/10)`}</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">{rodizioMode ? 'Selecione os Desafiantes' : `Selecione os Jogadores (${selectedCount}/${maxPlayersPerMatch})`}</h3>
             <PlayerSelectionGrid
               players={players}
               teams={teams}

@@ -9,7 +9,7 @@
     "db:setup": "node database/setup.js",
     "db:connection": "node database/test-connection-local.js",
     "build": "cd client && npm run build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test api/test/*.test.js"
   },
   "keywords": [
     "futsal",

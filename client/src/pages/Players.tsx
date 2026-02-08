@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Plus, Edit, Trash2, User, Search, BarChart3, Download, XCircle, LineChart, Share2, ArrowUp, ArrowDown } from 'lucide-react'
 import api from '../services/api'
@@ -53,6 +54,7 @@ interface PlayerDetails {
 }
 
 const Players: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [players, setPlayers] = useState<Player[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -132,7 +134,7 @@ const Players: React.FC = () => {
     const [y, m, d] = parts
     return `${d}/${m}/${y}`
   }
-  
+
 
   const didRunRef = useRef(false)
   useEffect(() => {
@@ -205,7 +207,7 @@ const Players: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     try {
       const payload: Record<string, unknown> = { ...formData }
       const photoUrl = typeof payload['photo_url'] === 'string' ? (payload['photo_url'] as string) : ''
@@ -268,7 +270,7 @@ const Players: React.FC = () => {
         await api.post('/api/players', payload)
         toast.success('Jogador criado com sucesso!')
       }
-      
+
       setShowForm(false)
       setEditingPlayer(null)
       setFormData({ name: '', photo_url: '', is_goalkeeper: false, photo_base64: '', photo_mime: '', photo2_base64: '', photo2_mime: '', remove_photo: false, remove_photo2: false, dominant_foot: '', height_cm: '', birthdate_str: '' })
@@ -416,10 +418,24 @@ const Players: React.FC = () => {
   const [generalFilter, setGeneralFilter] = useState('')
   const [generalSortKey, setGeneralSortKey] = useState<keyof GeneralStatsRow>('goals')
   const [generalSortAsc, setGeneralSortAsc] = useState(false)
-  
+
   // Novo estado para o modo de tabela
   type TableMode = 'artilharia' | 'assistentes' | 'defensores' | 'goleiros'
   const [tableMode, setTableMode] = useState<TableMode>('artilharia')
+
+  // Efeito para abrir modal de estatísticas via query param (vindo do Dashboard)
+  useEffect(() => {
+    const statsParam = searchParams.get('stats')
+    if (statsParam && ['artilharia', 'assistentes', 'defensores', 'goleiros'].includes(statsParam)) {
+      setTableMode(statsParam as TableMode)
+      // Limpa o parâmetro para evitar re-trigger
+      setSearchParams(new URLSearchParams())
+      // Abre o modal e busca os dados (setTimeout para garantir que tableMode foi atualizado)
+      setTimeout(() => {
+        openGeneralStats()
+      }, 0)
+    }
+  }, [searchParams, setSearchParams])
 
   // Efeito para ajustar ordenação quando muda o modo
   useEffect(() => {
@@ -463,9 +479,9 @@ const Players: React.FC = () => {
         const pid = Number(s.craque_player_id || 0)
         if (pid > 0) craquesMap.set(pid, (craquesMap.get(pid) || 0) + 1)
       }
-      const lastFinishedSunday = sundaysList.find(s => Number(s.finished_matches || 0) > 0) 
+      const lastFinishedSunday = sundaysList.find(s => Number(s.finished_matches || 0) > 0)
         || (sundaysList.length > 1 ? sundaysList[1] : sundaysList[0])
-      
+
       const lastFinishedSundayId = lastFinishedSunday?.sunday_id || 0
 
       const lastGoalsMap = new Map<number, number>()
@@ -476,42 +492,42 @@ const Players: React.FC = () => {
 
       if (lastFinishedSundayId) {
         const matchesResp = await api.get(`/api/sundays/${lastFinishedSundayId}/matches`)
-        const matches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number; match_number: number; status: string; team_orange_score?: number; team_black_score?: number; participants?: any[] }> : []
+        const matches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number; match_number: number; status: string; team_orange_score?: number; team_black_score?: number; participants?: Array<{ player_id: number; team: 'orange' | 'black'; is_goalkeeper?: boolean }> }> : []
         const realMatches = matches.filter(m => Number(m.match_number) > 0 && String(m.status) === 'finished')
-        
+
         // Calcular estatísticas do ÚLTIMO DOMINGO para subtrair
         for (const m of realMatches) {
-           // Partidas jogadas
-           if (m.participants) {
-             for (const p of m.participants) {
-               const pid = Number(p.player_id)
-               lastMatchesMap.set(pid, (lastMatchesMap.get(pid) || 0) + 1)
-               
-               // Gols Sofridos no último domingo
-               const conceded = p.team === 'orange' ? Number(m.team_black_score || 0) : Number(m.team_orange_score || 0)
-               lastGoalsConcededMap.set(pid, (lastGoalsConcededMap.get(pid) || 0) + conceded)
+          // Partidas jogadas
+          if (m.participants) {
+            for (const p of m.participants) {
+              const pid = Number(p.player_id)
+              lastMatchesMap.set(pid, (lastMatchesMap.get(pid) || 0) + 1)
 
-               // Clean Sheets no último domingo
-               if (conceded === 0) {
-                 lastCleanSheetsMap.set(pid, (lastCleanSheetsMap.get(pid) || 0) + 1)
-               }
-             }
-           }
+              // Gols Sofridos no último domingo
+              const conceded = p.team === 'orange' ? Number(m.team_black_score || 0) : Number(m.team_orange_score || 0)
+              lastGoalsConcededMap.set(pid, (lastGoalsConcededMap.get(pid) || 0) + conceded)
 
-           const statsResp = await api.get(`/api/matches/${m.match_id}/stats`)
-           const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string; is_own_goal?: boolean }> : []
-           for (const s of stats) {
-             if (String(s.event_type || 'goal') === 'goal') {
-               if (!s.is_own_goal && Number(s.player_scorer_id || 0) > 0) {
-                 const pid = Number(s.player_scorer_id)
-                 lastGoalsMap.set(pid, (lastGoalsMap.get(pid) || 0) + 1)
-               }
-               if (Number(s.player_assist_id || 0) > 0) {
-                 const pid = Number(s.player_assist_id)
-                 lastAssistsMap.set(pid, (lastAssistsMap.get(pid) || 0) + 1)
-               }
-             }
-           }
+              // Clean Sheets no último domingo
+              if (conceded === 0) {
+                lastCleanSheetsMap.set(pid, (lastCleanSheetsMap.get(pid) || 0) + 1)
+              }
+            }
+          }
+
+          const statsResp = await api.get(`/api/matches/${m.match_id}/stats`)
+          const stats = Array.isArray(statsResp.data?.stats) ? statsResp.data.stats as Array<{ player_scorer_id: number | null; player_assist_id: number | null; event_type?: string; is_own_goal?: boolean }> : []
+          for (const s of stats) {
+            if (String(s.event_type || 'goal') === 'goal') {
+              if (!s.is_own_goal && Number(s.player_scorer_id || 0) > 0) {
+                const pid = Number(s.player_scorer_id)
+                lastGoalsMap.set(pid, (lastGoalsMap.get(pid) || 0) + 1)
+              }
+              if (Number(s.player_assist_id || 0) > 0) {
+                const pid = Number(s.player_assist_id)
+                lastAssistsMap.set(pid, (lastAssistsMap.get(pid) || 0) + 1)
+              }
+            }
+          }
         }
 
         // Summary Match (apenas gols/assistências)
@@ -534,7 +550,7 @@ const Players: React.FC = () => {
       }
 
       // --- CÁLCULO DE RANKING ---
-      
+
       const matchesResp = await api.get('/api/matches')
       const allMatches = Array.isArray(matchesResp.data?.matches) ? matchesResp.data.matches as Array<{ match_id: number }> : []
       const cleanSheetsMap = new Map<number, number>()
@@ -556,44 +572,44 @@ const Players: React.FC = () => {
 
       // Função de ordenação dinâmica baseada no modo
       const rankSort = (
-        a: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number, sundays: number, wins: number}, 
-        b: {goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number, sundays: number, wins: number}
+        a: { goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number, sundays: number, wins: number },
+        b: { goals: number, assists: number, name: string, goals_conceded_per_game: number, clean_sheets: number, matches: number, sundays: number, wins: number }
       ) => {
         if (tableMode === 'artilharia') {
-           // Gols > Assistências > Nome
-           if (b.goals !== a.goals) return b.goals - a.goals
-           if (b.assists !== a.assists) return b.assists - a.assists
+          // Gols > Assistências > Nome
+          if (b.goals !== a.goals) return b.goals - a.goals
+          if (b.assists !== a.assists) return b.assists - a.assists
         } else if (tableMode === 'assistentes') {
-           // Assistências > Gols > Nome
-           if (b.assists !== a.assists) return b.assists - a.assists
-           if (b.goals !== a.goals) return b.goals - a.goals
+          // Assistências > Gols > Nome
+          if (b.assists !== a.assists) return b.assists - a.assists
+          if (b.goals !== a.goals) return b.goals - a.goals
         } else if (tableMode === 'defensores') {
-           // Média Gols Sofridos ASC (menor é melhor) > Clean Sheets DESC > Nome
-           // Importante: Jogadores com 0 jogos devem ir pro fim? Ou 0 média é bom?
-           // Assumindo que 0 jogos não entra no ranking de defensores ou tem média 0 mas deve ter prioridade menor se não jogou.
-           // Vamos tratar quem tem jogos > 0 primeiro se ambos tiverem 0.
-           
-           if (a.matches === 0 && b.matches > 0) return 1
-           if (b.matches === 0 && a.matches > 0) return -1
-           
-           if (Math.abs(a.goals_conceded_per_game - b.goals_conceded_per_game) > 0.001) 
-             return a.goals_conceded_per_game - b.goals_conceded_per_game // Menor é melhor
-           
-           if (b.clean_sheets !== a.clean_sheets) return b.clean_sheets - a.clean_sheets
+          // Média Gols Sofridos ASC (menor é melhor) > Clean Sheets DESC > Nome
+          // Importante: Jogadores com 0 jogos devem ir pro fim? Ou 0 média é bom?
+          // Assumindo que 0 jogos não entra no ranking de defensores ou tem média 0 mas deve ter prioridade menor se não jogou.
+          // Vamos tratar quem tem jogos > 0 primeiro se ambos tiverem 0.
+
+          if (a.matches === 0 && b.matches > 0) return 1
+          if (b.matches === 0 && a.matches > 0) return -1
+
+          if (Math.abs(a.goals_conceded_per_game - b.goals_conceded_per_game) > 0.001)
+            return a.goals_conceded_per_game - b.goals_conceded_per_game // Menor é melhor
+
+          if (b.clean_sheets !== a.clean_sheets) return b.clean_sheets - a.clean_sheets
         } else if (tableMode === 'goleiros') {
-           // 1. Mais domingos (sundays) - DESC
-           if (b.sundays !== a.sundays) return b.sundays - a.sundays
-           // 2. Melhor MGS/J (goals_conceded_per_game) - ASC
-           if (Math.abs(a.goals_conceded_per_game - b.goals_conceded_per_game) > 0.001) 
-             return a.goals_conceded_per_game - b.goals_conceded_per_game
-           // 3. NG (Clean Sheets) - DESC
-           if (b.clean_sheets !== a.clean_sheets) return b.clean_sheets - a.clean_sheets
-           // 4. Número de vitórias (wins) - DESC
-           if (b.wins !== a.wins) return b.wins - a.wins
-           // 5. Gols - DESC
-           if (b.goals !== a.goals) return b.goals - a.goals
-           // 6. Assistências - DESC
-           if (b.assists !== a.assists) return b.assists - a.assists
+          // 1. Mais domingos (sundays) - DESC
+          if (b.sundays !== a.sundays) return b.sundays - a.sundays
+          // 2. Melhor MGS/J (goals_conceded_per_game) - ASC
+          if (Math.abs(a.goals_conceded_per_game - b.goals_conceded_per_game) > 0.001)
+            return a.goals_conceded_per_game - b.goals_conceded_per_game
+          // 3. NG (Clean Sheets) - DESC
+          if (b.clean_sheets !== a.clean_sheets) return b.clean_sheets - a.clean_sheets
+          // 4. Número de vitórias (wins) - DESC
+          if (b.wins !== a.wins) return b.wins - a.wins
+          // 5. Gols - DESC
+          if (b.goals !== a.goals) return b.goals - a.goals
+          // 6. Assistências - DESC
+          if (b.assists !== a.assists) return b.assists - a.assists
         }
         return a.name.localeCompare(b.name)
       }
@@ -658,38 +674,70 @@ const Players: React.FC = () => {
       for (const pl of players) baseMap.set(pl.id, { name: pl.name, is_goalkeeper: pl.is_goalkeeper })
       const rows: GeneralStatsRow[] = detailed.map(d => {
         const pid = Number(d.player_id)
-        
+
         // Se estiver no modo goleiros, recalculamos o ranking apenas entre eles
         let curRank = currentRankMap.get(pid) || 999
         let preRank = prevRankMap.get(pid) || 999
         let change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
 
         if (tableMode === 'goleiros') {
-           // Recalcular rankings apenas para goleiros
-           const isGk = !!(baseMap.get(Number(d.player_id))?.is_goalkeeper || d.is_goalkeeper)
-           if (isGk) {
-             // Filtrar e ordenar apenas goleiros para ranking atual
-             const currentGks = currentStatsList.filter(p => {
-                const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
-                return pIsGk
-             })
-             const myCurIndex = currentGks.findIndex(p => p.id === pid)
-             curRank = myCurIndex >= 0 ? myCurIndex + 1 : 999
+          // Recalcular rankings apenas para goleiros com mínimo 10 jogos
+          const isGk = !!(baseMap.get(Number(d.player_id))?.is_goalkeeper || d.is_goalkeeper)
+          const matches = Number(d.total_games_played || 0)
+          const isValidGk = isGk && matches >= 10
 
-             // Filtrar e ordenar apenas goleiros para ranking anterior
-             const prevGks = prevStatsList.filter(p => {
-                const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
-                return pIsGk
-             })
-             const myPrevIndex = prevGks.findIndex(p => p.id === pid)
-             preRank = myPrevIndex >= 0 ? myPrevIndex + 1 : 999
-             
-             change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
-           } else {
-             curRank = 999
-             preRank = 999
-             change = 0
-           }
+          if (isValidGk) {
+            // Filtrar e ordenar apenas goleiros válidos para ranking atual
+            const currentGks = currentStatsList.filter(p => {
+              const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
+              return pIsGk && p.matches >= 10
+            })
+            const myCurIndex = currentGks.findIndex(p => p.id === pid)
+            curRank = myCurIndex >= 0 ? myCurIndex + 1 : 999
+
+            // Filtrar e ordenar apenas goleiros válidos para ranking anterior
+            const prevGks = prevStatsList.filter(p => {
+              const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
+              return pIsGk && p.matches >= 10
+            })
+            const myPrevIndex = prevGks.findIndex(p => p.id === pid)
+            preRank = myPrevIndex >= 0 ? myPrevIndex + 1 : 999
+
+            change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
+          } else {
+            curRank = 999
+            preRank = 999
+            change = 0
+          }
+        } else if (tableMode === 'defensores') {
+          // Recalcular rankings apenas para defensores (não-goleiros com min 5 jogos)
+          const isGk = !!(baseMap.get(Number(d.player_id))?.is_goalkeeper || d.is_goalkeeper)
+          const matches = Number(d.total_games_played || 0)
+          const isValidDefender = !isGk && matches >= 5
+
+          if (isValidDefender) {
+            // Filtrar e ordenar apenas defensores válidos para ranking atual
+            const currentDefs = currentStatsList.filter(p => {
+              const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
+              return !pIsGk && p.matches >= 5
+            })
+            const myCurIndex = currentDefs.findIndex(p => p.id === pid)
+            curRank = myCurIndex >= 0 ? myCurIndex + 1 : 999
+
+            // Filtrar e ordenar apenas defensores válidos para ranking anterior
+            const prevDefs = prevStatsList.filter(p => {
+              const pIsGk = !!(baseMap.get(p.id)?.is_goalkeeper)
+              return !pIsGk && p.matches >= 5
+            })
+            const myPrevIndex = prevDefs.findIndex(p => p.id === pid)
+            preRank = myPrevIndex >= 0 ? myPrevIndex + 1 : 999
+
+            change = (preRank !== 999 && curRank !== 999) ? (preRank - curRank) : 0
+          } else {
+            curRank = 999
+            preRank = 999
+            change = 0
+          }
         }
 
         return {
@@ -716,10 +764,10 @@ const Players: React.FC = () => {
           trend: d.trend || 'neutral'
         }
       })
-      
+
       // Ordena a lista final para exibição inicial de acordo com o ranking calculado
       rows.sort((a, b) => a.rank - b.rank)
-      
+
       setGeneralStatsRows(rows)
     } catch {
       toast.error('Erro ao carregar estatísticas gerais')
@@ -734,12 +782,17 @@ const Players: React.FC = () => {
     .filter(r => {
       // Filtro de texto
       const matchesSearch = r.name.toLowerCase().includes(generalFilter.toLowerCase())
-      
-      // Filtro específico para modo 'goleiros'
+
+      // Filtro específico para modo 'goleiros': goleiros com mínimo 10 jogos
       if (tableMode === 'goleiros') {
-        return matchesSearch && r.is_goalkeeper
+        return matchesSearch && r.is_goalkeeper && r.matches >= 10
       }
-      
+
+      // Filtro específico para modo 'defensores': apenas jogadores de linha com mínimo 5 jogos
+      if (tableMode === 'defensores') {
+        return matchesSearch && !r.is_goalkeeper && r.matches >= 5
+      }
+
       return matchesSearch
     })
     .sort((a, b) => {
@@ -749,7 +802,7 @@ const Players: React.FC = () => {
       if (generalSortKey === 'assists' && tableMode === 'assistentes') return a.rank - b.rank
       if (generalSortKey === 'goals_conceded_per_game' && tableMode === 'defensores') return a.rank - b.rank
       if (generalSortKey === 'sundays' && tableMode === 'goleiros') return a.rank - b.rank
-      
+
       const va = a[generalSortKey]
       const vb = b[generalSortKey]
       const cmp = typeof va === 'string' && typeof vb === 'string'
@@ -765,11 +818,11 @@ const Players: React.FC = () => {
     if (generalStatsSharing) return
     try {
       setGeneralStatsSharing(true)
-      
+
       // Capturar apenas os 25 primeiros registros da tabela atual
       // Vamos criar um elemento temporário fora da tela, preenchê-lo com os dados e capturá-lo
       const top25 = sortedAndFilteredGeneralRows.slice(0, 25)
-      
+
       const tempDiv = document.createElement('div')
       tempDiv.style.position = 'absolute'
       tempDiv.style.left = '-9999px'
@@ -778,12 +831,12 @@ const Players: React.FC = () => {
       tempDiv.style.backgroundColor = '#ffffff'
       tempDiv.style.padding = '20px'
       tempDiv.className = 'p-4 bg-white'
-      
+
       // Construir HTML da tabela
       let headerTitle = `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
       if (tableMode === 'defensores') headerTitle = 'Top Defensores'
       if (tableMode === 'goleiros') headerTitle = 'TOP Goleiros'
-      
+
       let html = `
         <h2 style="text-align:center; font-size: 24px; margin-bottom: 20px; font-weight: bold; font-family: sans-serif; color: #111;">${headerTitle}</h2>
         <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;">
@@ -808,19 +861,19 @@ const Players: React.FC = () => {
           </thead>
           <tbody>
       `
-      
+
       top25.forEach((r, index) => {
         const bg = index % 2 === 0 ? '#ffffff' : '#f9fafb'
         // Ícones de seta simples
         let arrow = ''
         if (r.rank_change > 0) arrow = `<span style="color: #16a34a; font-size: 10px;">▲ ${r.rank_change}</span>`
         if (r.rank_change < 0) arrow = `<span style="color: #dc2626; font-size: 10px;">▼ ${Math.abs(r.rank_change)}</span>`
-        
+
         let trendArrow = ''
         if (tableMode === 'defensores' && r.trend && r.trend !== 'neutral') {
-           const color = r.trend === 'up' ? '#16a34a' : '#dc2626'
-           const symbol = r.trend === 'up' ? '▲' : '▼'
-           trendArrow = `<span style="color: ${color}; margin-left: 4px; font-size: 10px;">${symbol}</span>`
+          const color = r.trend === 'up' ? '#16a34a' : '#dc2626'
+          const symbol = r.trend === 'up' ? '▲' : '▼'
+          trendArrow = `<span style="color: ${color}; margin-left: 4px; font-size: 10px;">${symbol}</span>`
         }
 
         html += `
@@ -845,7 +898,7 @@ const Players: React.FC = () => {
           </tr>
         `
       })
-      
+
       html += `
           </tbody>
         </table>
@@ -853,22 +906,22 @@ const Players: React.FC = () => {
           Gerado em ${new Date().toLocaleDateString('pt-BR')}
         </div>
       `
-      
+
       tempDiv.innerHTML = html
       document.body.appendChild(tempDiv)
-      
+
       const canvas = await html2canvas(tempDiv, { backgroundColor: '#ffffff', scale: 2 })
       document.body.removeChild(tempDiv)
-      
+
       const blob: Blob | null = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('no_blob')
-      
+
       const fileName = `estatisticas_top25_${tableMode}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.png`
       const file = new File([blob], fileName, { type: 'image/png' })
       let text = `Estatísticas Gerais (Top 25) - ${tableMode.toUpperCase()}`
       if (tableMode === 'defensores') text = 'Top Defensores'
       if (tableMode === 'goleiros') text = 'TOP Goleiros'
-      
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: text, text })
       } else {
@@ -1008,15 +1061,15 @@ const Players: React.FC = () => {
                     <User className="w-12 h-12 p-2 text-primary-600" />
                   )}
                 </div>
-              <div className="ml-3">
-                <h3 className="text-lg font-medium text-gray-900">{player.name}</h3>
-                <p className="text-sm text-gray-500">{player.is_goalkeeper ? 'Goleiro' : 'Linha'}</p>
-              </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium text-gray-900">{player.name}</h3>
+                  <p className="text-sm text-gray-500">{player.is_goalkeeper ? 'Goleiro' : 'Linha'}</p>
+                </div>
               </div>
               <div className="flex space-x-2">
                 <button
-                  onClick={(e) => { 
-                    e.stopPropagation() 
+                  onClick={(e) => {
+                    e.stopPropagation()
                     setChartModal({ isOpen: true, playerId: player.id, playerName: player.name })
                   }}
                   className="text-gray-400 hover:text-blue-600"
@@ -1039,7 +1092,7 @@ const Players: React.FC = () => {
                 </button>
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <div className="pt-2 border-t border-gray-200">
                 <div className="grid grid-cols-3 gap-4 text-center">
@@ -1081,18 +1134,18 @@ const Players: React.FC = () => {
             >
               <XCircle className="w-8 h-8" />
             </button>
-            
+
             <h2 className="text-2xl font-bold mb-4 text-center mt-2">Estatísticas Gerais dos Jogadores</h2>
-            
+
             <div className="flex flex-col space-y-3 mb-4">
               {/* Linha de Navegação (Abas) */}
               <div className="flex justify-center">
                 <div className="flex border border-gray-300 rounded-md overflow-hidden shadow-sm">
                   <button
                     onClick={() => {
-                       setTableMode('artilharia')
-                       setGeneralSortKey('goals')
-                       setGeneralSortAsc(false)
+                      setTableMode('artilharia')
+                      setGeneralSortKey('goals')
+                      setGeneralSortAsc(false)
                     }}
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'artilharia' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Artilharia"
@@ -1102,9 +1155,9 @@ const Players: React.FC = () => {
                   </button>
                   <button
                     onClick={() => {
-                       setTableMode('assistentes')
-                       setGeneralSortKey('assists')
-                       setGeneralSortAsc(false)
+                      setTableMode('assistentes')
+                      setGeneralSortKey('assists')
+                      setGeneralSortAsc(false)
                     }}
                     className={`px-4 py-2 text-sm font-medium border-l border-r border-gray-300 transition-colors ${tableMode === 'assistentes' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Assistentes"
@@ -1114,9 +1167,9 @@ const Players: React.FC = () => {
                   </button>
                   <button
                     onClick={() => {
-                       setTableMode('defensores')
-                       setGeneralSortKey('goals_conceded_per_game')
-                       setGeneralSortAsc(true)
+                      setTableMode('defensores')
+                      setGeneralSortKey('goals_conceded_per_game')
+                      setGeneralSortAsc(true)
                     }}
                     className={`px-4 py-2 text-sm font-medium border-l border-r border-gray-300 transition-colors ${tableMode === 'defensores' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Defensores"
@@ -1126,9 +1179,9 @@ const Players: React.FC = () => {
                   </button>
                   <button
                     onClick={() => {
-                       setTableMode('goleiros')
-                       setGeneralSortKey('sundays')
-                       setGeneralSortAsc(false)
+                      setTableMode('goleiros')
+                      setGeneralSortKey('sundays')
+                      setGeneralSortAsc(false)
                     }}
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tableMode === 'goleiros' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                     title="Goleiros"
@@ -1176,7 +1229,7 @@ const Players: React.FC = () => {
                     <option value="last_goals">Gols último (UG)</option>
                     <option value="last_assists">Assist. último (UA)</option>
                   </select>
-                  
+
                   <button
                     onClick={() => setGeneralSortAsc(s => !s)}
                     className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50 text-gray-700"
@@ -1194,7 +1247,7 @@ const Players: React.FC = () => {
                     <Share2 className="w-4 h-4 mr-2" />
                     {generalStatsSharing ? '...' : 'Imagem'}
                   </button>
-                  
+
                   <button
                     onClick={exportGeneralStatsXlsx}
                     className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm"
@@ -1257,17 +1310,17 @@ const Players: React.FC = () => {
                                 </div>
                               </td>
                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.goals}</td>
-                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.assists}</td>
-                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.assists}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">
                                 {Number(r.goals_conceded_per_game).toFixed(2)}
                                 {tableMode === 'defensores' && r.trend && r.trend !== 'neutral' && (
                                   <span className={`ml-1 inline-flex ${r.trend === 'up' ? 'text-green-600' : 'text-red-600'}`} title={r.trend === 'up' ? 'Melhorou defesa' : 'Piorou defesa'}>
                                     {r.trend === 'up' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
                                   </span>
                                 )}
-                               </td>
-                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.clean_sheets}</td>
-                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.craques}</td>
+                              </td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.clean_sheets}</td>
+                              <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.craques}</td>
                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.sundays}</td>
                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.matches}</td>
                               <td className="text-center tabular-nums px-2 py-2 font-semibold text-xs md:text-sm">{r.wins}</td>
@@ -1329,28 +1382,28 @@ const Players: React.FC = () => {
                     />
                   </div>
                 </div>
-                
+
                 <div className="mt-4 flex justify-center">
                   <button
                     onClick={async () => {
                       try {
                         const el = document.getElementById('player-card-container')
                         if (!el) return
-                        
+
                         // Temporariamente ajustar para captura de alta qualidade
-                        const canvas = await html2canvas(el, { 
+                        const canvas = await html2canvas(el, {
                           backgroundColor: null,
                           scale: 2,
                           useCORS: true,
                           allowTaint: true
                         })
-                        
+
                         const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
                         if (!blob) return
-                        
+
                         const fileName = `card_${details.player.name.replace(/\s+/g, '_').toLowerCase()}.png`
                         const file = new File([blob], fileName, { type: 'image/png' })
-                        
+
                         if (navigator.canShare && navigator.canShare({ files: [file] })) {
                           await navigator.share({
                             files: [file],
@@ -1996,11 +2049,11 @@ const Players: React.FC = () => {
                   setFormData({ ...formData, photo2_base64: data, photo2_mime: mime })
                   setCrop2Open(false)
                   setCrop2Image(null)
-                  }}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                >
-                  Salvar enquadramento
-                </button>
+                }}
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                Salvar enquadramento
+              </button>
             </div>
           </div>
         </div>

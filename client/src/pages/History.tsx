@@ -39,6 +39,15 @@ const History: React.FC = () => {
   const [players, setPlayers] = useState<Player[]>([])
   const [matches, setMatches] = useState<Match[]>([])
   const [loading, setLoading] = useState<boolean>(true)
+  const parseMatchDate = (dateStr: string) => {
+    const s = String(dateStr || '')
+    if (!s) return new Date(NaN)
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s)
+    if (isDateOnly) return new Date(`${s}T00:00:00`)
+    const match = s.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (match) return new Date(`${match[1]}T00:00:00`)
+    return new Date(s.replace(' ', 'T'))
+  }
 
   const [statusFilter, setStatusFilter] = useState<'all' | MatchStatus>('all')
   const [winnerFilter, setWinnerFilter] = useState<'all' | TeamColor | 'draw'>('all')
@@ -103,8 +112,8 @@ const History: React.FC = () => {
           match_number: typeof m.match_number === 'number' ? m.match_number : undefined,
         }))
         matchesList = matchesList.sort((a, b) => {
-          const da = new Date(a.match_date).getTime()
-          const db = new Date(b.match_date).getTime()
+          const da = parseMatchDate(a.match_date).getTime()
+          const db = parseMatchDate(b.match_date).getTime()
           if (Number.isFinite(da) && Number.isFinite(db)) {
             if (db !== da) return db - da
           }
@@ -139,13 +148,13 @@ const History: React.FC = () => {
         }
       }
       if (dateFrom) {
-        const d = new Date(m.match_date).getTime()
-        const f = new Date(dateFrom).getTime()
+        const d = parseMatchDate(m.match_date).getTime()
+        const f = parseMatchDate(dateFrom).getTime()
         if (Number.isFinite(d) && Number.isFinite(f) && d < f) return false
       }
       if (dateTo) {
-        const d = new Date(m.match_date).getTime()
-        const t = new Date(dateTo).getTime()
+        const d = parseMatchDate(m.match_date).getTime()
+        const t = parseMatchDate(dateTo).getTime()
         if (Number.isFinite(d) && Number.isFinite(t) && d > t) return false
       }
       return true
@@ -304,7 +313,7 @@ const History: React.FC = () => {
                     })()}
                   </div>
                   <div className="text-sm text-gray-500">
-                    {new Date(match.match_date).toLocaleDateString('pt-BR')}
+                    {parseMatchDate(match.match_date).toLocaleDateString('pt-BR')}
                   </div>
                 </div>
               ))
@@ -321,7 +330,7 @@ const History: React.FC = () => {
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Detalhes da Partida — {detailsModal.match_date ? new Date(detailsModal.match_date).toLocaleDateString('pt-BR') : ''}
+                  Detalhes da Partida — {detailsModal.match_date ? parseMatchDate(detailsModal.match_date).toLocaleDateString('pt-BR') : ''}
                 </h3>
                 <button
                   onClick={() => setDetailsModal({ open: false, matchId: null, loading: false, stats: [], black_ids: [], orange_ids: [] })}

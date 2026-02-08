@@ -132,21 +132,13 @@ router.get('/dashboard', async (req, res) => {
       LIMIT 3
     `);
     const topGoalkeepersResult = await query(`
-      WITH year_sundays AS (
-        SELECT sunday_id
-        FROM game_sundays
-        WHERE EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)
-      ),
-      total_year AS (
-        SELECT COUNT(*)::int AS total FROM year_sundays
-      )
       SELECT 
         p.player_id,
         p.name,
         p.photo_url,
+        COUNT(DISTINCT m.match_id) AS total_games,
         ROUND(AVG(CASE WHEN mp.team = 'orange' THEN m.team_black_score ELSE m.team_orange_score END)::numeric, 2) AS avg_goals_conceded,
-        COUNT(DISTINCT gs.sunday_id) AS gk_sundays,
-        (SELECT total FROM total_year) AS total_sundays_year
+        COUNT(DISTINCT gs.sunday_id) AS gk_sundays
       FROM players p
       JOIN match_participants mp ON mp.player_id = p.player_id
       JOIN matches m ON mp.match_id = m.match_id
@@ -154,10 +146,32 @@ router.get('/dashboard', async (req, res) => {
       WHERE p.is_goalkeeper = true
         AND mp.is_goalkeeper = true
         AND m.status = 'finished'
-        AND EXTRACT(YEAR FROM gs.date) = EXTRACT(YEAR FROM CURRENT_DATE)
       GROUP BY p.player_id, p.name, p.photo_url
-      HAVING COUNT(DISTINCT gs.sunday_id) >= CEIL(0.6 * (SELECT total FROM total_year))
-      ORDER BY avg_goals_conceded ASC, gk_sundays DESC
+      HAVING COUNT(DISTINCT m.match_id) >= 10
+      ORDER BY avg_goals_conceded ASC, total_games DESC
+      LIMIT 3
+    `);
+
+    // Top Defensores: jogadores de linha (não goleiros) com menor média de gols sofridos por partida
+    const topDefendersResult = await query(`
+      SELECT 
+        p.player_id,
+        p.name,
+        p.photo_url,
+        COUNT(DISTINCT m.match_id) AS total_games,
+        ROUND(
+          SUM(CASE WHEN mp.team = 'orange' THEN m.team_black_score ELSE m.team_orange_score END)::numeric /
+          NULLIF(COUNT(DISTINCT m.match_id), 0)::numeric
+        , 2) AS avg_goals_conceded
+      FROM players p
+      JOIN match_participants mp ON mp.player_id = p.player_id
+      JOIN matches m ON mp.match_id = m.match_id
+      WHERE p.is_goalkeeper = false
+        AND mp.is_goalkeeper = false
+        AND m.status = 'finished'
+      GROUP BY p.player_id, p.name, p.photo_url
+      HAVING COUNT(DISTINCT m.match_id) >= 5
+      ORDER BY avg_goals_conceded ASC, total_games DESC
       LIMIT 3
     `);
 
@@ -167,7 +181,8 @@ router.get('/dashboard', async (req, res) => {
       recentMatches: recentMatchesResult.rows,
       topScorers: topScorersResult.rows,
       topAssisters: topAssistersResult.rows,
-      topGoalkeepers: topGoalkeepersResult.rows
+      topGoalkeepers: topGoalkeepersResult.rows,
+      topDefenders: topDefendersResult.rows
     };
 
     // Atualiza cache

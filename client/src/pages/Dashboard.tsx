@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { Users, Trophy, Calendar, TrendingUp, Award } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Users, Trophy, Calendar, TrendingUp, Crown, Shield } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '../services/api'
 import { logError } from '../services/logger'
@@ -43,14 +43,82 @@ interface ApiTopItem {
   photo_url?: string
 }
 
+// Componente otimizado para fotos com lazy loading
+const PlayerPhoto: React.FC<{
+  playerId: number
+  name: string
+  photoUrl?: string
+  className?: string
+  fallbackClassName?: string
+}> = ({ playerId, name, photoUrl, className = '', fallbackClassName = '' }) => {
+  const [imgSrc, setImgSrc] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    // Usa photo_url direta se disponível, senão tenta a API
+    if (photoUrl) {
+      setImgSrc(photoUrl)
+    } else {
+      setImgSrc(`/api/players/${playerId}/photo`)
+    }
+    setLoading(true)
+    setError(false)
+  }, [playerId, photoUrl])
+
+  const handleError = () => {
+    setError(true)
+    setLoading(false)
+  }
+
+  const handleLoad = () => {
+    setLoading(false)
+  }
+
+  if (error || !imgSrc) {
+    return (
+      <div className={`${className} ${fallbackClassName} flex items-center justify-center bg-gradient-to-br from-gray-200 to-gray-300 text-gray-600 font-bold text-lg`}>
+        {name.slice(0, 1).toUpperCase()}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {loading && (
+        <div className={`${className} animate-pulse bg-gradient-to-br from-gray-200 to-gray-300`} />
+      )}
+      <img
+        src={imgSrc}
+        alt={name}
+        loading="lazy"
+        className={`${className} object-cover ${loading ? 'hidden' : ''}`}
+        onError={handleError}
+        onLoad={handleLoad}
+      />
+    </>
+  )
+}
+
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([])
   const [topScorers, setTopScorers] = useState<TopSummary[]>([])
   const [topAssisters, setTopAssisters] = useState<TopSummary[]>([])
   const [topGoalkeepers, setTopGoalkeepers] = useState<TopSummary[]>([])
+  const [topDefenders, setTopDefenders] = useState<TopSummary[]>([])
   const [photoMap, setPhotoMap] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(true)
+  const parseMatchDate = (dateStr: string) => {
+    const s = String(dateStr || '')
+    if (!s) return new Date(NaN)
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s)
+    if (isDateOnly) return new Date(`${s}T00:00:00`)
+    const match = s.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (match) return new Date(`${match[1]}T00:00:00`)
+    return new Date(s.replace(' ', 'T'))
+  }
 
   useEffect(() => {
     fetchDashboardData()
@@ -65,6 +133,7 @@ const Dashboard: React.FC = () => {
       const topS = statsResponse.data?.topScorers || []
       const topA = statsResponse.data?.topAssisters || []
       const topG = statsResponse.data?.topGoalkeepers || []
+      const topD = statsResponse.data?.topDefenders || []
 
       setStats({
         total_players: general.total_players || 0,
@@ -88,18 +157,20 @@ const Dashboard: React.FC = () => {
         photo_url: p.photo_url || '',
         count: Number(
           field === 'goals' ? (p.total_goals_scored || 0) :
-          field === 'assists' ? (p.total_assists || 0) :
-          (p.avg_goals_conceded ?? p.total_goals_conceded ?? 0)
+            field === 'assists' ? (p.total_assists || 0) :
+              (p.avg_goals_conceded ?? p.total_goals_conceded ?? 0)
         )
       }))
       const topSList = mapTop(topS, 'goals')
       const topAList = mapTop(topA, 'assists')
       const topGList = mapTop(topG, 'conceded')
+      const topDList = mapTop(topD, 'conceded')
       setTopScorers(topSList)
       setTopAssisters(topAList)
       setTopGoalkeepers(topGList)
+      setTopDefenders(topDList)
       try {
-        const all = [...topSList, ...topAList, ...topGList]
+        const all = [...topSList, ...topAList, ...topGList, ...topDList]
         const unique = Array.from(new Map(all.map(p => [p.id, p])).values())
         type PlayerMeta = { player_id: number; photo_url?: string; photo_mime?: string | null; has_photo?: boolean }
         let metaById: Map<number, PlayerMeta> = new Map()
@@ -142,98 +213,6 @@ const Dashboard: React.FC = () => {
     }
   }
 
-  const medalClass = (index: number) => {
-    if (index === 0) return 'bg-yellow-400 text-yellow-900'
-    if (index === 1) return 'bg-gray-300 text-gray-800'
-    return 'bg-orange-500 text-orange-100'
-  }
-
-  type ModalType = 'scorers' | 'assisters' | 'goalkeepers' | 'all' | null
-  const [modalOpen, setModalOpen] = useState<ModalType>(null)
-  const [category, setCategory] = useState<'all' | 'scorers' | 'assisters' | 'goalkeepers'>('all')
-  const [sortKey, setSortKey] = useState<'goals'|'assists'|'conceded'|'games'|'wins'|'draws'|'losses'|'gpg'|'gps'>('goals')
-  const [sortDir, setSortDir] = useState<'asc'|'desc'>('desc')
-  interface DetailedPlayer {
-    player_id: number
-    name: string
-    photo_url?: string
-    is_goalkeeper: boolean
-    total_games_played: number
-    total_goals_scored: number
-    total_assists: number
-    total_goals_conceded: number
-    goals_per_game: number
-    assists_per_game: number
-    goals_conceded_per_game: number
-    games_finished: number
-    games_won: number
-    games_lost: number
-    games_drawn: number
-    sundays_played: number
-    goals_per_sunday: number
-    gk_avg_conceded_year: number
-    gk_sundays_year: number
-    total_sundays_year: number
-    gk_sunday_participation_pct_year: number
-  }
-  const [detailedPlayers, setDetailedPlayers] = useState<DetailedPlayer[]>([])
-  const openModal = async (type: ModalType) => {
-    try {
-      const resp = await api.get('/api/stats/players/detailed')
-      const list = (resp.data?.players || []) as DetailedPlayer[]
-      setDetailedPlayers(list.map(p => ({
-        player_id: Number(p.player_id),
-        name: String(p.name),
-        photo_url: p.photo_url || '',
-        is_goalkeeper: !!p.is_goalkeeper,
-        total_games_played: Number(p.total_games_played || 0),
-        total_goals_scored: Number(p.total_goals_scored || 0),
-        total_assists: Number(p.total_assists || 0),
-        total_goals_conceded: Number(p.total_goals_conceded || 0),
-        goals_per_game: Number(p.goals_per_game || 0),
-        assists_per_game: Number(p.assists_per_game || 0),
-        goals_conceded_per_game: Number(p.goals_conceded_per_game || 0),
-        games_finished: Number(p.games_finished || 0),
-        games_won: Number(p.games_won || 0),
-        games_lost: Number(p.games_lost || 0),
-        games_drawn: Number(p.games_drawn || 0),
-        sundays_played: Number(p.sundays_played || 0),
-        goals_per_sunday: Number(p.goals_per_sunday || 0),
-        gk_avg_conceded_year: Number(p.gk_avg_conceded_year || 0),
-        gk_sundays_year: Number(p.gk_sundays_year || 0),
-        total_sundays_year: Number(p.total_sundays_year || 0),
-        gk_sunday_participation_pct_year: Number(p.gk_sunday_participation_pct_year || 0),
-      })))
-      setModalOpen(type)
-      setCategory(type ? type : 'all')
-      if (type === 'scorers') { setSortKey('goals'); setSortDir('desc') }
-      else if (type === 'assisters') { setSortKey('assists'); setSortDir('desc') }
-      else if (type === 'goalkeepers') { setSortKey('conceded'); setSortDir('asc') }
-      else { setSortKey('goals'); setSortDir('desc') }
-    } catch (e) {
-      toast.error('Erro ao carregar lista completa')
-    }
-  }
-  const sortedForModal = () => {
-    let list = [...detailedPlayers]
-    if (category === 'goalkeepers') list = list.filter(p => p.is_goalkeeper)
-    const val = (p: DetailedPlayer) => {
-      if (sortKey === 'goals') return p.total_goals_scored
-      if (sortKey === 'assists') return p.total_assists
-      if (sortKey === 'conceded') return p.total_goals_conceded
-      if (sortKey === 'games') return p.total_games_played
-      if (sortKey === 'wins') return p.games_won
-      if (sortKey === 'draws') return p.games_drawn
-      if (sortKey === 'losses') return p.games_lost
-      if (sortKey === 'gpg') return p.goals_per_game
-      return p.goals_per_sunday
-    }
-    list.sort((a, b) => {
-      const diff = val(a) - val(b)
-      return sortDir === 'asc' ? diff : -diff
-    })
-    return list
-  }
 
   if (loading) {
     return (
@@ -248,11 +227,11 @@ const Dashboard: React.FC = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
         <div className="text-sm text-gray-500">
-          {new Date().toLocaleDateString('pt-BR', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          {new Date().toLocaleDateString('pt-BR', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
           })}
         </div>
       </div>
@@ -295,7 +274,7 @@ const Dashboard: React.FC = () => {
           </div>
         </Link>
 
-        <div className="bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer" onClick={() => openModal('all')}>
+        <div className="bg-white rounded-lg shadow p-6 hover:shadow-md transition cursor-pointer" onClick={() => navigate('/players?stats=artilharia')}>
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-danger-100 rounded-lg p-3">
               <TrendingUp className="h-6 w-6 text-danger-600" />
@@ -308,7 +287,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      
+
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Matches */}
@@ -351,7 +330,7 @@ const Dashboard: React.FC = () => {
                       </span>
                     </div>
                     <div className="text-sm text-gray-500">
-                      {new Date(match.match_date).toLocaleDateString('pt-BR')}
+                      {parseMatchDate(match.match_date).toLocaleDateString('pt-BR')}
                     </div>
                   </div>
                 ))
@@ -362,211 +341,264 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Top Categories */}
+        {/* Top Categories - New Responsive Design */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900">Tops</h3>
-              <Link to="/players" className="text-sm text-primary-600 hover:text-primary-700">
-                Ver todos
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-yellow-500" />
+                Estatísticas Gerais
+              </h3>
+              <Link to="/players" className="text-sm text-primary-600 hover:text-primary-700 font-medium">
+                Ver todos →
               </Link>
             </div>
           </div>
-          <div className="p-6">
-            <div className="space-y-6">
-              <div>
-                <div className="text-sm font-medium text-gray-700 mb-3 cursor-pointer" onClick={() => openModal('scorers')}>Top Goleadores</div>
-                <div className="flex items-center space-x-4">
+          <div className="p-4 md:p-6">
+            {/* Grid responsivo: 1 coluna mobile, 2 colunas desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+
+              {/* Top Goleadores */}
+              <div
+                className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-100 hover:shadow-md transition-all duration-300 cursor-pointer"
+                onClick={() => navigate('/players?stats=artilharia')}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-400 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">⚽</span>
+                  </div>
+                  <h4 className="font-semibold text-gray-800">Top Goleadores</h4>
+                </div>
+                <div className="flex justify-center gap-3 md:gap-4">
                   {topScorers.length > 0 ? (
-                    topScorers.map((p, index) => (
-                      <div key={`sc-${p.id}`} className="relative">
-                        <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-200">
-                          { (p.photo_url || photoMap[p.id]) ? (
-                            <img src={p.photo_url || photoMap[p.id]} alt={p.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">{p.name.slice(0,1)}</div>
-                          ) }
+                    topScorers.slice(0, 3).map((p, index) => (
+                      <div
+                        key={`sc-${p.id}`}
+                        className={`relative flex flex-col items-center transition-transform duration-200 hover:scale-105 ${index === 0 ? 'order-2' : index === 1 ? 'order-1' : 'order-3'}`}
+                      >
+                        {/* Medal Container */}
+                        <div className={`relative ${index === 0 ? 'mb-1' : ''}`}>
+                          {/* Crown for first place */}
+                          {index === 0 && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                              <Crown className="w-5 h-5 text-yellow-500 drop-shadow-md" />
+                            </div>
+                          )}
+                          {/* Photo */}
+                          <div className={`
+                            ${index === 0 ? 'w-16 h-16 md:w-20 md:h-20 ring-4 ring-yellow-400' :
+                              index === 1 ? 'w-14 h-14 md:w-16 md:h-16 ring-3 ring-gray-400' :
+                                'w-14 h-14 md:w-16 md:h-16 ring-3 ring-orange-400'}
+                            rounded-full overflow-hidden bg-gray-200 shadow-lg
+                          `}>
+                            <PlayerPhoto
+                              playerId={p.id}
+                              name={p.name}
+                              photoUrl={p.photo_url || photoMap[p.id]}
+                              className="w-full h-full"
+                            />
+                          </div>
+                          {/* Medal Badge */}
+                          <div className={`
+                            absolute -bottom-1 -right-1 w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center shadow-lg font-bold text-xs
+                            ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-yellow-900' :
+                              index === 1 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-gray-800' :
+                                'bg-gradient-to-br from-orange-300 to-orange-500 text-orange-900'}
+                          `}>
+                            {index + 1}º
+                          </div>
                         </div>
-                        <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow ${medalClass(index)}`}>
-                          <Award className="w-3 h-3" />
-                        </div>
-                        <div className="text-xs text-center mt-1 text-gray-700">{p.count} gols</div>
+                        {/* Name and Stats */}
+                        <p className="text-xs md:text-sm font-medium text-gray-700 mt-2 text-center max-w-[80px] truncate" title={p.name}>
+                          {p.name.split(' ')[0]}
+                        </p>
+                        <p className="text-xs font-bold text-amber-600">{p.count} gols</p>
                       </div>
                     ))
                   ) : (
-                    <div className="text-gray-500">Sem dados</div>
+                    <div className="text-gray-400 text-sm py-4">Sem dados disponíveis</div>
                   )}
                 </div>
               </div>
-              <div>
-                <div className="text-sm font-medium text-gray-700 mb-3 cursor-pointer" onClick={() => openModal('assisters')}>Top Assistentes</div>
-                <div className="flex items-center space-x-4">
+
+              {/* Top Assistentes */}
+              <div
+                className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100 hover:shadow-md transition-all duration-300 cursor-pointer"
+                onClick={() => navigate('/players?stats=assistentes')}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">🎯</span>
+                  </div>
+                  <h4 className="font-semibold text-gray-800">Top Assistentes</h4>
+                </div>
+                <div className="flex justify-center gap-3 md:gap-4">
                   {topAssisters.length > 0 ? (
-                    topAssisters.map((p, index) => (
-                      <div key={`as-${p.id}`} className="relative">
-                        <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-200">
-                          { (p.photo_url || photoMap[p.id]) ? (
-                            <img src={p.photo_url || photoMap[p.id]} alt={p.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">{p.name.slice(0,1)}</div>
-                          ) }
+                    topAssisters.slice(0, 3).map((p, index) => (
+                      <div
+                        key={`as-${p.id}`}
+                        className={`relative flex flex-col items-center transition-transform duration-200 hover:scale-105 ${index === 0 ? 'order-2' : index === 1 ? 'order-1' : 'order-3'}`}
+                      >
+                        <div className={`relative ${index === 0 ? 'mb-1' : ''}`}>
+                          {index === 0 && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                              <Crown className="w-5 h-5 text-yellow-500 drop-shadow-md" />
+                            </div>
+                          )}
+                          <div className={`
+                            ${index === 0 ? 'w-16 h-16 md:w-20 md:h-20 ring-4 ring-yellow-400' :
+                              index === 1 ? 'w-14 h-14 md:w-16 md:h-16 ring-3 ring-gray-400' :
+                                'w-14 h-14 md:w-16 md:h-16 ring-3 ring-orange-400'}
+                            rounded-full overflow-hidden bg-gray-200 shadow-lg
+                          `}>
+                            <PlayerPhoto
+                              playerId={p.id}
+                              name={p.name}
+                              photoUrl={p.photo_url || photoMap[p.id]}
+                              className="w-full h-full"
+                            />
+                          </div>
+                          <div className={`
+                            absolute -bottom-1 -right-1 w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center shadow-lg font-bold text-xs
+                            ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-yellow-900' :
+                              index === 1 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-gray-800' :
+                                'bg-gradient-to-br from-orange-300 to-orange-500 text-orange-900'}
+                          `}>
+                            {index + 1}º
+                          </div>
                         </div>
-                        <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow ${medalClass(index)}`}>
-                          <Award className="w-3 h-3" />
-                        </div>
-                        <div className="text-xs text-center mt-1 text-gray-700">{p.count} assistências</div>
+                        <p className="text-xs md:text-sm font-medium text-gray-700 mt-2 text-center max-w-[80px] truncate" title={p.name}>
+                          {p.name.split(' ')[0]}
+                        </p>
+                        <p className="text-xs font-bold text-blue-600">{p.count} assist.</p>
                       </div>
                     ))
                   ) : (
-                    <div className="text-gray-500">Sem dados</div>
+                    <div className="text-gray-400 text-sm py-4">Sem dados disponíveis</div>
                   )}
                 </div>
               </div>
-              <div>
-                <div className="text-sm font-medium text-gray-700 mb-3 cursor-pointer" onClick={() => openModal('goalkeepers')}>Top Goleiros menos vazados</div>
-                <div className="flex items-center space-x-4">
+
+              {/* Top Defensores */}
+              <div
+                className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100 hover:shadow-md transition-all duration-300 cursor-pointer"
+                onClick={() => navigate('/players?stats=defensores')}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-lg flex items-center justify-center">
+                    <Shield className="w-4 h-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-gray-800">Top Defensores</h4>
+                </div>
+                <div className="flex justify-center gap-3 md:gap-4">
+                  {topDefenders.length > 0 ? (
+                    topDefenders.slice(0, 3).map((p, index) => (
+                      <div
+                        key={`df-${p.id}`}
+                        className={`relative flex flex-col items-center transition-transform duration-200 hover:scale-105 ${index === 0 ? 'order-2' : index === 1 ? 'order-1' : 'order-3'}`}
+                      >
+                        <div className={`relative ${index === 0 ? 'mb-1' : ''}`}>
+                          {index === 0 && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                              <Crown className="w-5 h-5 text-yellow-500 drop-shadow-md" />
+                            </div>
+                          )}
+                          <div className={`
+                            ${index === 0 ? 'w-16 h-16 md:w-20 md:h-20 ring-4 ring-yellow-400' :
+                              index === 1 ? 'w-14 h-14 md:w-16 md:h-16 ring-3 ring-gray-400' :
+                                'w-14 h-14 md:w-16 md:h-16 ring-3 ring-orange-400'}
+                            rounded-full overflow-hidden bg-gray-200 shadow-lg
+                          `}>
+                            <PlayerPhoto
+                              playerId={p.id}
+                              name={p.name}
+                              photoUrl={p.photo_url || photoMap[p.id]}
+                              className="w-full h-full"
+                            />
+                          </div>
+                          <div className={`
+                            absolute -bottom-1 -right-1 w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center shadow-lg font-bold text-xs
+                            ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-yellow-900' :
+                              index === 1 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-gray-800' :
+                                'bg-gradient-to-br from-orange-300 to-orange-500 text-orange-900'}
+                          `}>
+                            {index + 1}º
+                          </div>
+                        </div>
+                        <p className="text-xs md:text-sm font-medium text-gray-700 mt-2 text-center max-w-[80px] truncate" title={p.name}>
+                          {p.name.split(' ')[0]}
+                        </p>
+                        <p className="text-xs font-bold text-emerald-600">{p.count.toFixed ? p.count.toFixed(2) : p.count} avg</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-gray-400 text-sm py-4">Sem dados disponíveis</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Top Goleiros */}
+              <div
+                className="bg-gradient-to-br from-purple-50 to-fuchsia-50 rounded-xl p-4 border border-purple-100 hover:shadow-md transition-all duration-300 cursor-pointer"
+                onClick={() => navigate('/players?stats=goleiros')}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-fuchsia-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">🧤</span>
+                  </div>
+                  <h4 className="font-semibold text-gray-800">Top Goleiros</h4>
+                </div>
+                <div className="flex justify-center gap-3 md:gap-4">
                   {topGoalkeepers.length > 0 ? (
-                    topGoalkeepers.map((p, index) => (
-                      <div key={`gk-${p.id}`} className="relative">
-                        <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-200">
-                          { (p.photo_url || photoMap[p.id]) ? (
-                            <img src={p.photo_url || photoMap[p.id]} alt={p.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-500 text-sm">{p.name.slice(0,1)}</div>
-                          ) }
+                    topGoalkeepers.slice(0, 3).map((p, index) => (
+                      <div
+                        key={`gk-${p.id}`}
+                        className={`relative flex flex-col items-center transition-transform duration-200 hover:scale-105 ${index === 0 ? 'order-2' : index === 1 ? 'order-1' : 'order-3'}`}
+                      >
+                        <div className={`relative ${index === 0 ? 'mb-1' : ''}`}>
+                          {index === 0 && (
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                              <Crown className="w-5 h-5 text-yellow-500 drop-shadow-md" />
+                            </div>
+                          )}
+                          <div className={`
+                            ${index === 0 ? 'w-16 h-16 md:w-20 md:h-20 ring-4 ring-yellow-400' :
+                              index === 1 ? 'w-14 h-14 md:w-16 md:h-16 ring-3 ring-gray-400' :
+                                'w-14 h-14 md:w-16 md:h-16 ring-3 ring-orange-400'}
+                            rounded-full overflow-hidden bg-gray-200 shadow-lg
+                          `}>
+                            <PlayerPhoto
+                              playerId={p.id}
+                              name={p.name}
+                              photoUrl={p.photo_url || photoMap[p.id]}
+                              className="w-full h-full"
+                            />
+                          </div>
+                          <div className={`
+                            absolute -bottom-1 -right-1 w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center shadow-lg font-bold text-xs
+                            ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-yellow-900' :
+                              index === 1 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-gray-800' :
+                                'bg-gradient-to-br from-orange-300 to-orange-500 text-orange-900'}
+                          `}>
+                            {index + 1}º
+                          </div>
                         </div>
-                        <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center shadow ${medalClass(index)}`}>
-                          <Award className="w-3 h-3" />
-                        </div>
-                        <div className="text-xs text-center mt-1 text-gray-700">{p.count.toFixed ? p.count.toFixed(2) : p.count} média</div>
+                        <p className="text-xs md:text-sm font-medium text-gray-700 mt-2 text-center max-w-[80px] truncate" title={p.name}>
+                          {p.name.split(' ')[0]}
+                        </p>
+                        <p className="text-xs font-bold text-purple-600">{p.count.toFixed ? p.count.toFixed(2) : p.count} avg</p>
                       </div>
                     ))
                   ) : (
-                    <div className="text-gray-500">Sem dados</div>
+                    <div className="text-gray-400 text-sm py-4">Sem dados disponíveis</div>
                   )}
                 </div>
               </div>
+
             </div>
           </div>
         </div>
       </div>
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[85vh] overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="text-lg font-medium text-gray-900">
-                {category === 'scorers' ? 'Lista completa — Goleadores' :
-                 category === 'assisters' ? 'Lista completa — Assistentes' :
-                 category === 'goalkeepers' ? 'Lista completa — Goleiros menos vazados' :
-                 'Lista completa — Todos os jogadores'}
-              </div>
-              <button className="text-sm text-primary-600 hover:text-primary-700" onClick={() => setModalOpen(null)}>Fechar</button>
-            </div>
-            <div className="px-6 py-4 space-y-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">Filtro</span>
-                  <select className="border rounded px-2 py-1 text-sm" value={category} onChange={(e) => setCategory(e.target.value as 'all'|'scorers'|'assisters'|'goalkeepers')}>
-                    <option value="all">Todos</option>
-                    <option value="scorers">Goleadores</option>
-                    <option value="assisters">Assistentes</option>
-                    <option value="goalkeepers">Goleiros</option>
-                  </select>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">Ordenar por</span>
-                  <select className="border rounded px-2 py-1 text-sm" value={sortKey} onChange={(e) => setSortKey(e.target.value as 'goals'|'assists'|'conceded'|'games'|'wins'|'draws'|'losses'|'gpg'|'gps')}>
-                    <option value="goals">Gols</option>
-                    <option value="assists">Assistências</option>
-                    <option value="conceded">Gols sofridos</option>
-                    <option value="games">Partidas</option>
-                    <option value="wins">Vitórias</option>
-                    <option value="draws">Empates</option>
-                    <option value="losses">Derrotas</option>
-                    <option value="gpg">Média/jogo (gols)</option>
-                    <option value="gps">Média/domingo (gols)</option>
-                  </select>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">Direção</span>
-                  <select className="border rounded px-2 py-1 text-sm" value={sortDir} onChange={(e) => setSortDir(e.target.value as 'asc'|'desc')}>
-                    <option value="desc">Desc</option>
-                    <option value="asc">Asc</option>
-                  </select>
-                </div>
-              </div>
-              <div className="border rounded-lg">
-                <div className="max-h-[60vh] overflow-y-auto">
-                  <table className="min-w-full table-fixed text-sm">
-                    <thead className="sticky top-0 bg-gray-100">
-                      <tr>
-                        <th className="px-3 py-2 text-left w-12">#</th>
-                        <th className="px-3 py-2 text-left w-64">Jogador</th>
-                        <th className="px-3 py-2 text-center w-24">Gols</th>
-                        <th className="px-3 py-2 text-center w-28">Assistências</th>
-                        <th className="px-3 py-2 text-center w-28">Gols sofridos</th>
-                        <th className="px-3 py-2 text-center w-24">Partidas</th>
-                        <th className="px-3 py-2 text-center w-24">Vitórias</th>
-                        <th className="px-3 py-2 text-center w-24">Empates</th>
-                        <th className="px-3 py-2 text-center w-24">Derrotas</th>
-                        <th className="px-3 py-2 text-center w-36">Média/jogo (gols)</th>
-                        <th className="px-3 py-2 text-center w-40">Média/domingo (gols)</th>
-                        {category === 'goalkeepers' && (
-                          <>
-                            <th className="px-3 py-2 text-center w-44">Média/jogo (goleiro, ano)</th>
-                            <th className="px-3 py-2 text-center w-44">% domingos (goleiro, ano)</th>
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedForModal().map((p, idx) => (
-                        <tr key={`dl-${p.player_id}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="px-3 py-2">{idx + 1}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex items-center space-x-2">
-                              <div className="w-8 h-8 rounded overflow-hidden bg-gray-200 flex-shrink-0">
-                                {p.photo_url ? (
-                                  <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-gray-500 text-xs">{p.name.slice(0,1)}</div>
-                                )}
-                              </div>
-                              <div className="text-gray-900 truncate">{p.name}</div>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.total_goals_scored}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.total_assists}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.total_goals_conceded}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.total_games_played}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.games_won}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.games_drawn}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.games_lost}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.goals_per_game.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-center text-gray-900">{p.goals_per_sunday.toFixed(2)}</td>
-                          {category === 'goalkeepers' && (
-                            <>
-                              <td className="px-3 py-2 text-center text-gray-900">{Number(p.gk_avg_conceded_year || 0).toFixed(2)}</td>
-                              <td className="px-3 py-2 text-center text-gray-900">
-                                {Number(p.gk_sunday_participation_pct_year || 0).toFixed(0)}%
-                              </td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
-                      {sortedForModal().length === 0 && (
-                        <tr>
-                          <td className="px-3 py-6 text-center text-gray-500" colSpan={11}>Nenhum jogador encontrado</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

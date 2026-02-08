@@ -48,7 +48,15 @@ const PlayerHistoryChartModal: React.FC<PlayerHistoryChartModalProps> = ({ isOpe
     setLoading(true)
     try {
       const response = await api.get(`/api/players/${id}/history`)
-      const history = response.data.history.map((item: any) => ({
+      type ApiHistoryItem = {
+        date: string
+        sunday_id?: number
+        goals?: number | string
+        assists?: number | string
+        wins?: number | string
+        goals_conceded_avg?: number | string
+      }
+      const history = response.data.history.map((item: ApiHistoryItem) => ({
         ...item,
         // Formata a data para exibir DD/MM
         displayDate: new Date(item.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),

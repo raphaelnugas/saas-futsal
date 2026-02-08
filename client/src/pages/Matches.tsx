@@ -173,6 +173,15 @@ const Matches: React.FC = () => {
     const m = t.match(/^(\d{4}-\d{2}-\d{2})/)
     return m ? m[1] : undefined
   }
+  const parseMatchDate = (dateStr: string) => {
+    const s = String(dateStr || '')
+    if (!s) return new Date(NaN)
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s)
+    if (isDateOnly) return new Date(`${s}T00:00:00`)
+    const match = s.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (match) return new Date(`${match[1]}T00:00:00`)
+    return new Date(s.replace(' ', 'T'))
+  }
   const nextSundayDate = (): string => {
     const now = new Date()
     const d = now.getDay()
@@ -295,8 +304,8 @@ const Matches: React.FC = () => {
         match_number: typeof m.match_number === 'number' ? m.match_number : undefined
       }))
       matchesList = matchesList.sort((a, b) => {
-        const da = new Date(a.match_date).getTime()
-        const db = new Date(b.match_date).getTime()
+        const da = parseMatchDate(a.match_date).getTime()
+        const db = parseMatchDate(b.match_date).getTime()
         if (Number.isFinite(da) && Number.isFinite(db)) {
           if (db !== da) return db - da
         }
@@ -2291,7 +2300,7 @@ const Matches: React.FC = () => {
                   </div>
                   <div className="flex items-center space-x-3">
                     <div className="text-sm text-gray-500">
-                      {new Date(match.match_date).toLocaleDateString('pt-BR')}
+                      {parseMatchDate(match.match_date).toLocaleDateString('pt-BR')}
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(match.id) }}
@@ -2315,7 +2324,7 @@ const Matches: React.FC = () => {
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Detalhes da Partida — {detailsModal.match_date ? new Date(detailsModal.match_date).toLocaleDateString('pt-BR') : ''}
+                  Detalhes da Partida — {detailsModal.match_date ? parseMatchDate(detailsModal.match_date).toLocaleDateString('pt-BR') : ''}
                 </h3>
                 <button
                   onClick={() => setDetailsModal({ open: false, matchId: null, loading: false, stats: [], black_ids: [], orange_ids: [] })}

@@ -302,8 +302,14 @@ router.get('/:id/photo', async (req, res) => {
       return res.status(404).json({ error: 'Foto não encontrada' });
     }
     const etag = `"${crypto.createHash('sha1').update(row.photo_data).digest('hex')}"`;
+    
+    // Verificar se o cliente já tem a versão atual (304 Not Modified)
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    
     res.set('ETag', etag);
-    res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.set('Cache-Control', 'public, max-age=3600'); // Cache por 1 hora
     res.set('Content-Type', row.photo_mime);
     res.send(row.photo_data);
   } catch (error) {
@@ -324,8 +330,14 @@ router.get('/:id/photo2', async (req, res) => {
       return res.status(404).json({ error: 'Foto não encontrada' });
     }
     const etag = `"${crypto.createHash('sha1').update(row.photo2_data).digest('hex')}"`;
+    
+    // Verificar se o cliente já tem a versão atual (304 Not Modified)
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    
     res.set('ETag', etag);
-    res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.set('Cache-Control', 'public, max-age=3600'); // Cache por 1 hora
     res.set('Content-Type', row.photo2_mime);
     res.send(row.photo2_data);
   } catch (error) {

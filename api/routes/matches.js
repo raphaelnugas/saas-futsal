@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { query, transaction } = require('../config/database');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
 const { computeNextWinStreak } = require('../utils/winStreakRules');
@@ -24,7 +25,7 @@ function resolveBackupDir() {
       if (fs.existsSync(root)) {
         return path.join(root, 'backups');
       }
-    } catch {}
+    } catch { }
   }
   return path.join(process.cwd(), 'backups');
 }
@@ -220,8 +221,8 @@ router.get('/', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro ao buscar partidas:', error);
-    res.status(500).json({ 
+    logger.error('Erro ao buscar partidas:', error);
+    res.status(500).json({
       error: 'Erro ao buscar partidas',
       message: 'Não foi possível recuperar a lista de partidas'
     });
@@ -251,7 +252,7 @@ router.get('/:id', async (req, res) => {
     `, [id]);
 
     if (matchResult.rows.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Partida não encontrada',
         message: `Partida com ID ${id} não existe`
       });
@@ -278,8 +279,8 @@ router.get('/:id', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro ao buscar partida:', error);
-    res.status(500).json({ 
+    logger.error('Erro ao buscar partida:', error);
+    res.status(500).json({
       error: 'Erro ao buscar partida',
       message: 'Não foi possível recuperar os dados da partida'
     });
@@ -295,9 +296,9 @@ router.post('/', [
     // Validar entrada
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        error: 'Erro de validação', 
-        details: errors.array() 
+      return res.status(400).json({
+        error: 'Erro de validação',
+        details: errors.array()
       });
     }
 
@@ -306,7 +307,7 @@ router.post('/', [
     // Verificar se o domingo existe
     const sundayResult = await query('SELECT * FROM game_sundays WHERE sunday_id = $1', [sunday_id]);
     if (sundayResult.rows.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Domingo não encontrado',
         message: `Domingo com ID ${sunday_id} não existe`
       });
@@ -317,9 +318,9 @@ router.post('/', [
       'SELECT * FROM matches WHERE sunday_id = $1 AND match_number = $2',
       [sunday_id, match_number]
     );
-    
+
     if (existingResult.rows.length > 0) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'Partida já existe',
         message: `Já existe uma partida número ${match_number} neste domingo`
       });
@@ -344,7 +345,7 @@ router.post('/', [
 
   } catch (error) {
     console.error('Erro ao criar partida:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Erro ao criar partida',
       message: 'Não foi possível criar a partida'
     });
@@ -359,24 +360,24 @@ router.post('/:id/teams', async (req, res) => {
     // Buscar partida e verificar status
     const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
     if (matchResult.rows.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Partida não encontrada',
         message: `Partida com ID ${id} não existe`
       });
     }
 
-  const match = matchResult.rows[0];
-  if (match.status !== 'scheduled') {
-    return res.status(400).json({ 
-      error: 'Partida não pode ser sorteada',
-      message: 'Apenas partidas agendadas podem ter times sorteados'
-    });
-  }
+    const match = matchResult.rows[0];
+    if (match.status !== 'scheduled') {
+      return res.status(400).json({
+        error: 'Partida não pode ser sorteada',
+        message: 'Apenas partidas agendadas podem ter times sorteados'
+      });
+    }
 
-  // Não resetar contadores aqui; a lógica de rotação/saída será aplicada abaixo com base no histórico
+    // Não resetar contadores aqui; a lógica de rotação/saída será aplicada abaixo com base no histórico
 
-  // Buscar jogadores presentes neste domingo
-  const playersResult = await query(`
+    // Buscar jogadores presentes neste domingo
+    const playersResult = await query(`
     SELECT 
       p.player_id,
       p.name,
@@ -393,7 +394,7 @@ router.post('/:id/teams', async (req, res) => {
     `, [match.sunday_id]);
 
     if (playersResult.rows.length < 6) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Jogadores insuficientes',
         message: `São necessários pelo menos 6 jogadores para sortear times. Atualmente há ${playersResult.rows.length} jogadores presentes.`
       });
@@ -410,7 +411,7 @@ router.post('/:id/teams', async (req, res) => {
       `);
       const cfg = Number(configRes.rows[0]?.max_players_per_team || 0);
       if (!Number.isNaN(cfg) && cfg >= 1) maxPlayersPerTeam = cfg;
-    } catch {}
+    } catch { }
     const totalPlayers = Math.min(players.length, maxPlayersPerTeam * 2);
     if (players.length < maxPlayersPerTeam * 2) {
       return res.status(400).json({
@@ -451,7 +452,7 @@ router.post('/:id/teams', async (req, res) => {
           }
         }
       }
-    } catch {}
+    } catch { }
     // Aplicar embaralhamento leve considerando possíveis ajustes
     selectedPlayers = applyWinStreakRule(selectedPlayers, match.team_orange_win_streak);
 
@@ -499,11 +500,11 @@ router.post('/:id/teams', async (req, res) => {
       blackTeam,
       ruleApplied: match.team_orange_win_streak >= parseInt(process.env.WIN_STREAK_RULE)
     });
-    try { await broadcastTicker(id); } catch {}
+    try { await broadcastTicker(id); } catch { }
 
   } catch (error) {
     console.error('Erro ao sortear times:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Erro ao sortear times',
       message: 'Não foi possível sortear os times para esta partida'
     });
@@ -567,6 +568,7 @@ router.post('/:id/participants', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      logger.error('Erro de validação participants', { details: errors.array() });
       return res.status(400).json({
         error: 'Erro de validação',
         details: errors.array()
@@ -584,7 +586,7 @@ router.post('/:id/participants', [
       `);
       const cfg = Number(configRes.rows[0]?.max_players_per_team || 0);
       if (!Number.isNaN(cfg) && cfg >= 1) maxPlayersPerTeam = cfg;
-    } catch {}
+    } catch { }
     const blackIds = Array.isArray(black_team) ? black_team.map((v) => Number(v)) : [];
     const orangeIds = Array.isArray(orange_team) ? orange_team.map((v) => Number(v)) : [];
     const blackSet = new Set(blackIds);
@@ -612,7 +614,7 @@ router.post('/:id/participants', [
 
     const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
     if (matchResult.rows.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Partida não encontrada',
         message: `Partida com ID ${id} não existe`
       });
@@ -634,7 +636,7 @@ router.post('/:id/participants', [
       WHERE player_id = ANY($1)
     `, [allIds]);
 
-  const playersById = new Map(playersResult.rows.map(p => [p.player_id, p]));
+    const playersById = new Map(playersResult.rows.map(p => [p.player_id, p]));
 
     // Verificar se todos IDs existem
     for (const pid of allIds) {
@@ -691,7 +693,7 @@ router.post('/:id/participants', [
       let nextOrangeCounter = 0;
       if (prevRes.rows.length > 0) {
         const prev = prevRes.rows[0];
-        
+
         // Buscar configuração do sistema para saber se a regra "sair os dois" está ativa
         const configRes = await query('SELECT many_present_rule_enabled FROM system_config ORDER BY config_id DESC LIMIT 1');
         const manyPresentRuleEnabled = configRes.rows.length > 0 ? configRes.rows[0].many_present_rule_enabled : false;
@@ -707,7 +709,7 @@ router.post('/:id/participants', [
         const threeInRow = winners.length >= 3 && winners[0] === winners[1] && winners[1] === winners[2] ? winners[0] : null;
         const blackPrevCounter = Number(prev.team_black_win_streak || 0);
         const orangePrevCounter = Number(prev.team_orange_win_streak || 0);
-        
+
         let tieWinner = null;
         try {
           const tieRes = await query(`
@@ -718,24 +720,24 @@ router.post('/:id/participants', [
             LIMIT 1
           `, [prev.match_id]);
           if (tieRes.rows[0]?.team_scored) {
-          const tw = tieRes.rows[0].team_scored;
-          if (tw === 'black' || tw === 'orange') tieWinner = tw;
-        }
-      } catch {}
-        
-      const next = computeNextWinStreak({
-        manyPresentRuleEnabled,
-        prevWinnerTeam: prev.winner_team,
-        prevTieDeciderWinner: tieWinner,
-        prevBlackWinStreak: blackPrevCounter,
-        prevOrangeWinStreak: orangePrevCounter,
-        threshold: 3
-      });
-      nextBlackCounter = next.nextBlack;
-      nextOrangeCounter = next.nextOrange;
+            const tw = tieRes.rows[0].team_scored;
+            if (tw === 'black' || tw === 'orange') tieWinner = tw;
+          }
+        } catch { }
+
+        const next = computeNextWinStreak({
+          manyPresentRuleEnabled,
+          prevWinnerTeam: prev.winner_team,
+          prevTieDeciderWinner: tieWinner,
+          prevBlackWinStreak: blackPrevCounter,
+          prevOrangeWinStreak: orangePrevCounter,
+          threshold: 3
+        });
+        nextBlackCounter = next.nextBlack;
+        nextOrangeCounter = next.nextOrange;
       }
       await query(`UPDATE matches SET team_black_win_streak = $1, team_orange_win_streak = $2 WHERE match_id = $3`, [nextBlackCounter, nextOrangeCounter, id]);
-      try { await broadcastTicker(id); } catch {}
+      try { await broadcastTicker(id); } catch { }
     } catch (e) {
       console.error('Erro ao calcular contadores de permanência:', e);
     }
@@ -747,8 +749,8 @@ router.post('/:id/participants', [
     });
 
   } catch (error) {
-    console.error('Erro ao definir participantes:', error);
-    res.status(500).json({ 
+    logger.error('Erro ao definir participantes:', error);
+    res.status(500).json({
       error: 'Erro ao definir participantes',
       message: 'Não foi possível salvar os participantes da partida'
     });
@@ -766,9 +768,9 @@ router.post('/:id/finish', [
     // Validar entrada
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        error: 'Erro de validação', 
-        details: errors.array() 
+      return res.status(400).json({
+        error: 'Erro de validação',
+        details: errors.array()
       });
     }
 
@@ -778,7 +780,7 @@ router.post('/:id/finish', [
     // Buscar partida
     const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
     if (matchResult.rows.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Partida não encontrada',
         message: `Partida com ID ${id} não existe`
       });
@@ -786,7 +788,7 @@ router.post('/:id/finish', [
 
     const match = matchResult.rows[0];
     if (match.status !== 'in_progress') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Partida não pode ser finalizada',
         message: 'Apenas partidas em andamento podem ser finalizadas'
       });
@@ -832,7 +834,7 @@ router.post('/:id/finish', [
       if (blackGoals !== Number(black_score) || orangeGoals !== Number(orange_score)) {
         const w =
           orangeGoals > blackGoals ? 'orange' :
-          blackGoals > orangeGoals ? 'black' : 'draw';
+            blackGoals > orangeGoals ? 'black' : 'draw';
         await query(`
           UPDATE matches 
           SET 
@@ -843,7 +845,7 @@ router.post('/:id/finish', [
           WHERE match_id = $4
         `, [orangeGoals, blackGoals, w, id]);
       }
-    } catch {}
+    } catch { }
 
     // Atualizar estatísticas dos jogadores
     await updatePlayerStats(id, Array.isArray(played_ids) ? Array.from(new Set(played_ids.map(Number).filter(n => Number.isFinite(n) && n > 0))) : undefined);
@@ -858,8 +860,8 @@ router.post('/:id/finish', [
         black_win_streak: 0
       }
     });
-    try { await broadcastTicker(null); } catch {}
-    try { await broadcastFinish(id); } catch {}
+    try { await broadcastTicker(null); } catch { }
+    try { await broadcastFinish(id); } catch { }
     try {
       const row = matchResult.rows[0] || {};
       const sundayId = row.sunday_id;
@@ -881,14 +883,14 @@ router.post('/:id/finish', [
       const file = path.join(dir, `sunday_${sundayId}.json`);
       await fs.promises.mkdir(dir, { recursive: true });
       await fs.promises.writeFile(file, JSON.stringify(backup, null, 2), 'utf8');
-      console.log(`Backup salvo com sucesso: ${file}`);
+      logger.info(`Backup salvo com sucesso: ${file}`);
     } catch (err) {
-      console.error('Erro ao salvar backup da partida:', err);
+      logger.error('Erro ao salvar backup da partida:', err);
     }
 
   } catch (error) {
-    console.error('Erro ao finalizar partida:', error);
-    res.status(500).json({ 
+    logger.error('Erro ao finalizar partida:', error);
+    res.status(500).json({
       error: 'Erro ao finalizar partida',
       message: 'Não foi possível finalizar a partida'
     });
@@ -975,7 +977,7 @@ router.post('/:id/stats-goal', [
     });
     try {
       await broadcastGoal(id, inserted);
-    } catch {}
+    } catch { }
     res.status(201).json({ message: 'Gol/assistência registrada', stat: inserted });
   } catch (error) {
     console.error('Erro ao adicionar gol/assistência:', error);
@@ -983,7 +985,145 @@ router.post('/:id/stats-goal', [
   }
 });
 
-// Registrar substituição na partida
+// Registrar substituição na partida (Atomic)
+router.post('/:id/substitution', [
+  body('team').isIn(['orange', 'black']).withMessage('Time deve ser orange ou black'),
+  body('out_id').isInt({ min: 1 }).withMessage('ID do jogador que sai inválido'),
+  body('in_id').isInt({ min: 1 }).withMessage('ID do jogador que entra inválido'),
+  body('minute').optional().isInt({ min: 0, max: 120 }),
+  body('mode').optional().isIn(['bench', 'swap']).withMessage('Modo deve ser bench ou swap')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Erro de validação', details: errors.array() });
+    }
+    const { id } = req.params;
+    const { team, out_id, in_id, minute, mode = 'bench' } = req.body;
+
+    const matchResult = await query('SELECT * FROM matches WHERE match_id = $1', [id]);
+    if (matchResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Partida não encontrada' });
+    }
+    const match = matchResult.rows[0];
+
+    // Buscar configurações
+    let maxPlayersPerTeam = parseInt(process.env.MAX_PLAYERS_PER_TEAM) || 5;
+    try {
+      const configRes = await query('SELECT max_players_per_team FROM system_config ORDER BY config_id DESC LIMIT 1');
+      const cfg = Number(configRes.rows[0]?.max_players_per_team || 0);
+      if (!Number.isNaN(cfg) && cfg >= 1) maxPlayersPerTeam = cfg;
+    } catch { }
+
+    let statsInserted = [];
+    let updatedBlack = [];
+    let updatedOrange = [];
+
+    await transaction(async (client) => {
+      // 1. Validar times atuais
+      const participantsRes = await client.query('SELECT player_id, team, is_goalkeeper FROM match_participants WHERE match_id = $1', [id]);
+      const currentParticipants = participantsRes.rows;
+      const blackTeam = currentParticipants.filter(p => p.team === 'black');
+      const orangeTeam = currentParticipants.filter(p => p.team === 'orange');
+
+      const currentTeamList = team === 'black' ? blackTeam : orangeTeam;
+      const otherTeamList = team === 'black' ? orangeTeam : blackTeam;
+
+      // Validar saída
+      const outPlayer = currentTeamList.find(p => p.player_id === out_id);
+      if (!outPlayer) {
+        throw { status: 400, message: 'Jogador que sai não está no time especificado' };
+      }
+
+      // Lógica por modo
+      if (mode === 'bench') {
+        // Validar que quem entra NÃO está jogando
+        const alreadyPlaying = currentParticipants.find(p => p.player_id === in_id);
+        if (alreadyPlaying) {
+          throw { status: 400, message: 'Jogador que entra já está jogando' };
+        }
+
+        // Registrar stat
+        const ins = await client.query(`
+          INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+          VALUES ($1, $2, $3, $4, $5, $6, 'substitution')
+          RETURNING *
+        `, [id, in_id, out_id, team, minute || null, false]);
+        statsInserted.push(ins.rows[0]);
+
+        // Atualizar participantes
+        // Remove quem sai
+        await client.query('DELETE FROM match_participants WHERE match_id = $1 AND player_id = $2', [id, out_id]);
+
+        // Adiciona quem entra (preservando is_goalkeeper se necessário, ou buscando do cadastro)
+        // Por padrão, pega do cadastro se é goleiro ou não.
+        const pRes = await client.query('SELECT is_goalkeeper FROM players WHERE player_id = $1', [in_id]);
+        const isGk = pRes.rows[0]?.is_goalkeeper || false;
+
+        await client.query(`
+          INSERT INTO match_participants (match_id, player_id, team, is_goalkeeper)
+          VALUES ($1, $2, $3, $4)
+        `, [id, in_id, team, isGk]);
+
+      } else if (mode === 'swap') {
+        // SWAP: troca entre times (in_id deve estar no outro time)
+        const inPlayer = otherTeamList.find(p => p.player_id === in_id);
+        if (!inPlayer) {
+          throw { status: 400, message: 'Jogador que entra (na troca) não está no time oposto' };
+        }
+
+        // Stats 1: Time A trocando Out por In
+        const ins1 = await client.query(`
+          INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+          VALUES ($1, $2, $3, $4, $5, $6, 'substitution')
+          RETURNING *
+        `, [id, in_id, out_id, team, minute || null, false]);
+        statsInserted.push(ins1.rows[0]);
+
+        // Stats 2: Time B trocando In por Out (recíproca)
+        const otherTeamColor = team === 'black' ? 'orange' : 'black';
+        const ins2 = await client.query(`
+          INSERT INTO stats_log (match_id, player_scorer_id, player_assist_id, team_scored, goal_minute, is_own_goal, event_type)
+          VALUES ($1, $2, $3, $4, $5, $6, 'substitution')
+          RETURNING *
+        `, [id, out_id, in_id, otherTeamColor, minute || null, false]);
+        statsInserted.push(ins2.rows[0]);
+
+        // Atualizar participantes (UPDATE é mais fácil aqui pois ambos existem)
+        // Out -> vai para o outro time
+        // In -> vem para este time
+        await client.query('UPDATE match_participants SET team = $1 WHERE match_id = $2 AND player_id = $3', [otherTeamColor, id, out_id]);
+        await client.query('UPDATE match_participants SET team = $1 WHERE match_id = $2 AND player_id = $3', [team, id, in_id]);
+      }
+
+      // Retornar times atualizados
+      const finalParts = await client.query('SELECT player_id, team, is_goalkeeper FROM match_participants WHERE match_id = $1', [id]);
+      updatedBlack = finalParts.rows.filter(p => p.team === 'black').map(p => p.player_id);
+      updatedOrange = finalParts.rows.filter(p => p.team === 'orange').map(p => p.player_id);
+    });
+
+    // Broadcast
+    for (const stat of statsInserted) {
+      try { await broadcastGoal(id, stat); } catch { }
+    }
+
+    res.json({
+      message: 'Substituição realizada com sucesso',
+      stats: statsInserted,
+      black_team: updatedBlack,
+      orange_team: updatedOrange
+    });
+
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    logger.error('Erro ao registrar substituição (atomic):', error);
+    res.status(500).json({ error: 'Erro interno ao processar substituição' });
+  }
+});
+
+// Registrar substituição na partida (LEGACY - Manter por compatibilidade se necessário, mas ideal remover)
 router.post('/:id/stats-substitution', [
   body('team').isIn(['orange', 'black']).withMessage('Time deve ser orange ou black'),
   body('out_id').isInt({ min: 1 }).withMessage('ID do jogador que sai inválido'),
@@ -1025,7 +1165,7 @@ router.post('/:id/stats-substitution', [
     });
     try {
       await broadcastGoal(id, inserted);
-    } catch {}
+    } catch { }
     res.status(201).json({ message: 'Substituição registrada', stat: inserted });
   } catch (error) {
     console.error('Erro ao registrar substituição:', error);
@@ -1152,12 +1292,12 @@ router.post('/:id/tie-decider', [
 // Função auxiliar para aplicar regra de sequência de vitórias
 function applyWinStreakRule(players, orangeWinStreak) {
   const winStreakRule = parseInt(process.env.WIN_STREAK_RULE) || 3;
-  
+
   if (orangeWinStreak >= winStreakRule) {
     // Time laranja venceu muito, misturar jogadores mais fortes
     return players.sort(() => Math.random() - 0.5);
   }
-  
+
   return players;
 }
 
@@ -1165,25 +1305,25 @@ function applyWinStreakRule(players, orangeWinStreak) {
 function sortTeams(players) {
   const maxPlayersPerTeam = parseInt(process.env.MAX_PLAYERS_PER_TEAM) || 5;
   const shuffled = players.slice().sort(() => Math.random() - 0.5);
-  
+
   // Separar goleiros
   const goalkeepers = shuffled.filter(p => p.is_goalkeeper);
   const fieldPlayers = shuffled.filter(p => !p.is_goalkeeper);
-  
+
   // Distribuir goleiros (1 por time se houver)
   const orangeTeam = [];
   const blackTeam = [];
-  
+
   if (goalkeepers.length >= 1) {
     orangeTeam.push(goalkeepers[0]);
     if (goalkeepers.length >= 2) {
       blackTeam.push(goalkeepers[1]);
     }
   }
-  
+
   // Completar com jogadores de linha
   const remainingPlayers = fieldPlayers.slice(0, (maxPlayersPerTeam * 2) - orangeTeam.length - blackTeam.length);
-  
+
   for (let i = 0; i < remainingPlayers.length; i++) {
     if (i % 2 === 0 && orangeTeam.length < maxPlayersPerTeam) {
       orangeTeam.push(remainingPlayers[i]);
@@ -1193,7 +1333,7 @@ function sortTeams(players) {
       orangeTeam.push(remainingPlayers[i]);
     }
   }
-  
+
   return { orangeTeam, blackTeam };
 }
 
@@ -1276,7 +1416,7 @@ router.delete('/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao finalizar partida:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Erro ao finalizar partida',
       message: 'Não foi possível finalizar a partida'
     });
@@ -1301,7 +1441,7 @@ router.post('/:id/adjust-score', requireAdmin, [
     }
     const winner =
       Number(orange_score) > Number(black_score) ? 'orange' :
-      Number(black_score) > Number(orange_score) ? 'black' : 'draw';
+        Number(black_score) > Number(orange_score) ? 'black' : 'draw';
     await query(`
       UPDATE matches
       SET 
@@ -1311,7 +1451,7 @@ router.post('/:id/adjust-score', requireAdmin, [
         updated_at = CURRENT_TIMESTAMP
       WHERE match_id = $4
     `, [Number(orange_score), Number(black_score), winner, id]);
-    try { await broadcastFinish(id); } catch {}
+    try { await broadcastFinish(id); } catch { }
     res.json({ message: 'Placar ajustado com sucesso', match_id: Number(id), orange_score: Number(orange_score), black_score: Number(black_score), winner });
   } catch (error) {
     console.error('Erro ao ajustar placar:', error);
@@ -1342,7 +1482,7 @@ router.post('/:id/sync-score', requireAdmin, async (req, res) => {
     }
     const winner =
       orangeGoals > blackGoals ? 'orange' :
-      blackGoals > orangeGoals ? 'black' : 'draw';
+        blackGoals > orangeGoals ? 'black' : 'draw';
     await query(`
       UPDATE matches
       SET 
@@ -1352,7 +1492,7 @@ router.post('/:id/sync-score', requireAdmin, async (req, res) => {
         updated_at = CURRENT_TIMESTAMP
       WHERE match_id = $4
     `, [orangeGoals, blackGoals, winner, id]);
-    try { await broadcastFinish(id); } catch {}
+    try { await broadcastFinish(id); } catch { }
     res.json({ message: 'Placar sincronizado com eventos', match_id: Number(id), orange_score: orangeGoals, black_score: blackGoals, winner });
   } catch (error) {
     console.error('Erro ao sincronizar placar:', error);
@@ -1369,9 +1509,9 @@ router.post('/:id/win-streak', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        error: 'Erro de validação', 
-        details: errors.array() 
+      return res.status(400).json({
+        error: 'Erro de validação',
+        details: errors.array()
       });
     }
     const { id } = req.params;
@@ -1389,7 +1529,7 @@ router.post('/:id/win-streak', [
         updated_at = CURRENT_TIMESTAMP
       WHERE match_id = $3
     `, [black, orange, id]);
-    try { await broadcastTicker(id); } catch {}
+    try { await broadcastTicker(id); } catch { }
     return res.json({ message: 'Sequências atualizadas', streak: { black, orange }, match_id: Number(id) });
   } catch (error) {
     console.error('Erro ao atualizar sequências:', error);

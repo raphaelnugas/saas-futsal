@@ -1,11 +1,11 @@
 import React from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { 
-  Home, 
-  Users, 
-  Calendar, 
-  Trophy, 
+import {
+  Home,
+  Users,
+  Calendar,
+  Trophy,
   LogOut,
   Menu,
   X,
@@ -195,6 +195,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           }
         } catch { void 0 }
       })
+      es.addEventListener('finish', (ev: MessageEvent) => {
+        try {
+          // Se a partida acabou, limpa o ticker imediatamente para parar o alarme
+          setTicker(null)
+          lastBeepAtRef.current = 0
+        } catch { void 0 }
+      })
       es.addEventListener('inactive', () => {
         setTicker(null)
         lastBeepAtRef.current = 0
@@ -293,9 +300,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                           else localStorage.removeItem('matchAlarmMuted')
                         } catch { void 0 }
                       }}
-                      className={`ml-2 inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold shadow ${
-                        alarmMuted ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' : 'bg-red-600 text-white hover:bg-red-700'
-                      }`}
+                      className={`ml-2 inline-flex items-center px-2 py-1 rounded-md text-xs font-semibold shadow ${alarmMuted ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' : 'bg-red-600 text-white hover:bg-red-700'
+                        }`}
                       title={alarmMuted ? 'Reativar alarme' : 'Silenciar alarme'}
                     >
                       {alarmMuted ? 'Reativar' : 'Silenciar'}
@@ -315,18 +321,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div className="flex">
               <div className="flex-shrink-0 flex items-center space-x-3">
                 <h1 className="text-xl font-bold text-primary-600">Futsal Náutico</h1>
-                <div 
-                  className={`w-3 h-3 rounded-full ${
-                    connectionStatus === 'connected' ? 'bg-green-500' : 
-                    connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
-                  }`}
+                <div
+                  className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' :
+                      connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
                   title={
-                    connectionStatus === 'connected' ? 'Conectado ao servidor' : 
-                    connectionStatus === 'connecting' ? 'Conectando...' : 'Desconectado'
+                    connectionStatus === 'connected' ? 'Conectado ao servidor' :
+                      connectionStatus === 'connecting' ? 'Conectando...' : 'Desconectado'
                   }
                 />
               </div>
-              
+
               {/* Desktop Navigation */}
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
                 {navigation.map((item) => {
@@ -335,11 +340,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <Link
                       key={item.name}
                       to={item.href}
-                      className={`${
-                        isActive
+                      className={`${isActive
                           ? 'border-primary-500 text-gray-900'
                           : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                      } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                        } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                     >
                       <item.icon className="w-4 h-4 mr-2" />
                       {item.name}
@@ -349,11 +353,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {isAdmin && (
                   <Link
                     to="/admin"
-                    className={`${
-                      location.pathname === '/admin'
+                    className={`${location.pathname === '/admin'
                         ? 'border-primary-500 text-gray-900'
                         : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                    } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                      } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                   >
                     <span className="w-4 h-4 mr-2 inline-block rounded bg-primary-500"></span>
                     Admin
@@ -395,11 +398,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     key={item.name}
                     to={item.href}
                     onClick={() => setIsMenuOpen(false)}
-                    className={`${
-                      isActive
+                    className={`${isActive
                         ? 'bg-primary-50 border-primary-500 text-primary-700'
                         : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-                    } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+                      } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
                   >
                     <div className="flex items-center">
                       <item.icon className="w-5 h-5 mr-3" />
@@ -412,11 +414,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link
                   to="/admin"
                   onClick={() => setIsMenuOpen(false)}
-                  className={`${
-                    location.pathname === '/admin'
+                  className={`${location.pathname === '/admin'
                       ? 'bg-primary-50 border-primary-500 text-primary-700'
                       : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-                  } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+                    } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
                 >
                   <div className="flex items-center">
                     <span className="w-5 h-5 mr-3 inline-block rounded bg-primary-500"></span>

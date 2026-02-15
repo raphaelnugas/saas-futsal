@@ -32,6 +32,7 @@ interface UseMatchSocketProps {
   onScoreUpdate: (black: number, orange: number) => void
   onStreakUpdate: (black: number, orange: number) => void
   onFinishRemote: (black: number, orange: number) => void
+  onParticipantsUpdate?: (blackIds: number[], orangeIds: number[]) => void
 }
 
 export const useMatchSocket = ({
@@ -40,9 +41,10 @@ export const useMatchSocket = ({
   onMatchStatsUpdate,
   onScoreUpdate,
   onStreakUpdate,
-  onFinishRemote
+  onFinishRemote,
+  onParticipantsUpdate
 }: UseMatchSocketProps) => {
-  const [connectionStatus, setConnectionStatus] = useState<'online'|'reconnecting'|'offline'>('offline')
+  const [connectionStatus, setConnectionStatus] = useState<'online' | 'reconnecting' | 'offline'>('offline')
   const sseRef = useRef<EventSource | null>(null)
   const sseAttemptsRef = useRef<number>(0)
   const pollIntervalRef = useRef<number | null>(null)
@@ -121,7 +123,15 @@ export const useMatchSocket = ({
         const pollBlack = Number(m?.team_black_win_streak || 0)
         const pollOrange = Number(m?.team_orange_win_streak || 0)
         onStreakUpdate(pollBlack, pollOrange)
-        
+
+        // Sincronizar participantes (Adicionado para update real-time)
+        if (onParticipantsUpdate && Array.isArray(det.data?.match?.participants)) {
+          const parts = det.data.match.participants as Array<{ team: 'black' | 'orange', player_id: number }>
+          const blackIds = parts.filter(p => p.team === 'black').map(p => p.player_id)
+          const orangeIds = parts.filter(p => p.team === 'orange').map(p => p.player_id)
+          onParticipantsUpdate(blackIds, orangeIds)
+        }
+
         sseStatsRef.current.polls += 1
         console.info('[streak:poll]', { partida: currentMatchId, preto: pollBlack, laranja: pollOrange, polls: sseStatsRef.current.polls })
         if (st === 'finished') {
@@ -213,17 +223,17 @@ export const useMatchSocket = ({
           console.info('[sse:init]', { eventos: data.stats?.length || 0, golsPreto: Number(data.blackGoals || 0), golsLaranja: Number(data.orangeGoals || 0), inits: sseStatsRef.current.inits })
           onMatchStatsUpdate(data.stats || [])
           onScoreUpdate(Number(data.blackGoals || 0), Number(data.orangeGoals || 0))
-          
-          ;(async () => {
-            try {
-              const det = await api.get(`/api/matches/${currentMatchId}`)
-              const m = det.data?.match as { team_black_win_streak?: number, team_orange_win_streak?: number }
-              const sseBlack = Number(m?.team_black_win_streak || 0)
-              const sseOrange = Number(m?.team_orange_win_streak || 0)
-              onStreakUpdate(sseBlack, sseOrange)
-              console.info('[streak:sse-init]', { partida: currentMatchId, preto: sseBlack, laranja: sseOrange })
-            } catch { void 0 }
-          })()
+
+            ; (async () => {
+              try {
+                const det = await api.get(`/api/matches/${currentMatchId}`)
+                const m = det.data?.match as { team_black_win_streak?: number, team_orange_win_streak?: number }
+                const sseBlack = Number(m?.team_black_win_streak || 0)
+                const sseOrange = Number(m?.team_orange_win_streak || 0)
+                onStreakUpdate(sseBlack, sseOrange)
+                console.info('[streak:sse-init]', { partida: currentMatchId, preto: sseBlack, laranja: sseOrange })
+              } catch { void 0 }
+            })()
         } catch { void 0 }
       })
       es.addEventListener('goal', (ev: MessageEvent) => {
@@ -239,14 +249,14 @@ export const useMatchSocket = ({
           // BUT, to avoid complexity, we can just rely on the parent refetching or we can assume onMatchStatsUpdate can handle a full list if we maintained it here.
           // Actually, the original code maintained state. 
           // Let's just trigger a callback that says "new goal arrived" with the full updated score.
-          
+
           // IMPORTANT: The original code used setMatchStats(prev => [...prev, data.stat]).
           // Since we don't have the 'prev' state inside this hook easily without making it complex,
           // we will rely on the fact that 'goal' event also sends updated scores.
           // We should ideally fetch the latest stats to be sure, OR pass a callback that handles the append.
           // Let's fetch the latest stats to ensure consistency, although slightly more expensive.
-          startPolling() 
-          
+          startPolling()
+
         } catch { void 0 }
       })
       es.addEventListener('finish', (ev: MessageEvent) => {

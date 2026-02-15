@@ -41,11 +41,14 @@ const PlayerSelectionGrid: React.FC<PlayerSelectionGridProps> = ({
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
       {sortedPlayers.map((player) => (
-        <button
+        <div
           key={player.id}
-          onClick={() => onPlayerSelection(player.id)}
-          className={`p-3 rounded-lg border-2 text-left transition-colors ${
-            (teams.black.some(p => p.id === player.id))
+          onClick={() => {
+            if (!(rodizioMode && rodizioWinnerColor && teams[rodizioWinnerColor].some(p => p.id === player.id))) {
+              onPlayerSelection(player.id)
+            }
+          }}
+          className={`p-3 rounded-lg border-2 text-left transition-colors cursor-pointer relative ${(teams.black.some(p => p.id === player.id))
               ? 'bg-gray-200 text-gray-900 border-gray-600'
               : (teams.orange.some(p => p.id === player.id))
                 ? 'bg-orange-50 text-orange-900 border-orange-400'
@@ -54,17 +57,16 @@ const PlayerSelectionGrid: React.FC<PlayerSelectionGridProps> = ({
                   : (presentMap[player.id])
                     ? 'bg-green-50 border-green-500'
                     : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-          }`}
-          disabled={!!(rodizioMode && rodizioWinnerColor && teams[rodizioWinnerColor].some(p => p.id === player.id))}
+            } ${(rodizioMode && rodizioWinnerColor && teams[rodizioWinnerColor].some(p => p.id === player.id)) ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
         >
           <div className="font-medium text-sm">{player.name}</div>
           <div className="text-xs text-gray-500">{player.position}</div>
-          <div className={`mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] ${
-            (teams.black.some(p => p.id === player.id)) ? 'bg-gray-200 text-gray-800' :
-            (teams.orange.some(p => p.id === player.id)) ? 'bg-orange-200 text-orange-900' :
-            (isFirstMatchToday && selectedPlayers.includes(player.id)) ? 'bg-blue-200 text-blue-900' :
-            presentMap[player.id] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-          }`}>
+          <div className={`mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] ${(teams.black.some(p => p.id === player.id)) ? 'bg-gray-200 text-gray-800' :
+              (teams.orange.some(p => p.id === player.id)) ? 'bg-orange-200 text-orange-900' :
+                (isFirstMatchToday && selectedPlayers.includes(player.id)) ? 'bg-blue-200 text-blue-900' :
+                  presentMap[player.id] ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+            }`}>
             {(isFirstMatchToday && selectedPlayers.includes(player.id)) ? 'Selecionado' : (presentMap[player.id] ? 'Presente' : 'Ausente')}
           </div>
           <div className="text-xs text-gray-400">
@@ -86,7 +88,7 @@ const PlayerSelectionGrid: React.FC<PlayerSelectionGridProps> = ({
               Laranja
             </button>
           </div>
-        </button>
+        </div>
       ))}
     </div>
   )

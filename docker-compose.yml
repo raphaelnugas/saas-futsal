@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16
+    container_name: futsal_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: futsal_nautico
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./create_role.sql:/docker-entrypoint-initdb.d/01_create_role.sql
+      - c:/Futsal/futsal_backup.sql:/docker-entrypoint-initdb.d/02_futsal_backup.sql
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

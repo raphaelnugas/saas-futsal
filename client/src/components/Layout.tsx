@@ -195,11 +195,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           }
         } catch { void 0 }
       })
-<<<<<<< HEAD
       es.addEventListener('finish', () => {
-=======
-      es.addEventListener('finish', (ev: MessageEvent) => {
->>>>>>> 18063abe5ffa5ec0cbd1fca61b31bcfdfc3d5d20
         try {
           // Se a partida acabou, limpa o ticker imediatamente para parar o alarme
           setTicker(null)
@@ -327,11 +323,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <h1 className="text-xl font-bold text-primary-600">Futsal Náutico</h1>
                 <div
                   className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' :
-<<<<<<< HEAD
                     connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
-=======
-                      connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
->>>>>>> 18063abe5ffa5ec0cbd1fca61b31bcfdfc3d5d20
                     }`}
                   title={
                     connectionStatus === 'connected' ? 'Conectado ao servidor' :
@@ -349,13 +341,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       key={item.name}
                       to={item.href}
                       className={`${isActive
-<<<<<<< HEAD
                         ? 'border-primary-500 text-gray-900'
                         : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-=======
-                          ? 'border-primary-500 text-gray-900'
-                          : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
->>>>>>> 18063abe5ffa5ec0cbd1fca61b31bcfdfc3d5d20
                         } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                     >
                       <item.icon className="w-4 h-4 mr-2" />
@@ -367,13 +354,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <Link
                     to="/admin"
                     className={`${location.pathname === '/admin'
-<<<<<<< HEAD
                       ? 'border-primary-500 text-gray-900'
                       : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-=======
-                        ? 'border-primary-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
->>>>>>> 18063abe5ffa5ec0cbd1fca61b31bcfdfc3d5d20
                       } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                   >
                     <span className="w-4 h-4 mr-2 inline-block rounded bg-primary-500"></span>
@@ -417,13 +399,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     to={item.href}
                     onClick={() => setIsMenuOpen(false)}
                     className={`${isActive
-<<<<<<< HEAD
                       ? 'bg-primary-50 border-primary-500 text-primary-700'
                       : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-=======
-                        ? 'bg-primary-50 border-primary-500 text-primary-700'
-                        : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
->>>>>>> 18063abe5ffa5ec0cbd1fca61b31bcfdfc3d5d20
                       } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
                   >
                     <div className="flex items-center">
@@ -438,13 +415,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   to="/admin"
                   onClick={() => setIsMenuOpen(false)}
                   className={`${location.pathname === '/admin'
-<<<<<<< HEAD
                     ? 'bg-primary-50 border-primary-500 text-primary-700'
                     : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-=======
-                      ? 'bg-primary-50 border-primary-500 text-primary-700'
-                      : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
->>>>>>> 18063abe5ffa5ec0cbd1fca61b31bcfdfc3d5d20
                     } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
                 >
                   <div className="flex items-center">

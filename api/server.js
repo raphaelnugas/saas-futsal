@@ -82,13 +82,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Rota raiz para feedback visual
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'API do Futsal Náutico está rodando! ⚽', 
-    status: 'online',
-    documentation: 'Acesse os endpoints em /api/...' 
-  });
-});
+// Root handled by SPA fallback below (after static middleware)
 
 // Rotas
 app.use('/api/auth', authRoutes);

@@ -188,15 +188,17 @@ app.get('/api/assets/rules', authenticateToken, async (req, res) => {
 
 // Endpoints de texto/HTML removidos para manter apenas a leitura do PDF original
 
-// Rota 404
-app.use('*', (req, res) => {
-  logger.warn('Rota 404', { path: req.originalUrl, method: req.method, requestId: req.id });
-  res.status(404).json({ 
-    error: 'Rota não encontrada',
-    path: req.originalUrl,
-    method: req.method,
-    requestId: req.id
-  });
+// Servir frontend React (build de produção)
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+app.use(express.static(clientDist));
+
+// SPA fallback — qualquer rota não-API entrega o index.html
+app.get('*', (req, res) => {
+  if (req.originalUrl.startsWith('/api/')) {
+    logger.warn('Rota API 404', { path: req.originalUrl, method: req.method, requestId: req.id });
+    return res.status(404).json({ error: 'Rota não encontrada', path: req.originalUrl });
+  }
+  res.sendFile(path.join(clientDist, 'index.html'));
 });
 
 // Error handling middleware

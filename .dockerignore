@@ -1,0 +1,15 @@
+node_modules
+client/node_modules
+client/dist
+.git
+*.md
+*.pdf
+*.ps1
+*.bat
+scripts/
+setup-*.sh
+setup-*.ps1
+setup-*.bat
+docker-compose.yml
+.env
+.env.*

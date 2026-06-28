@@ -442,8 +442,6 @@ const Matches: React.FC = () => {
     return Math.round(sum / count)
   }
 
-  const sortButtonRef = useRef<HTMLButtonElement>(null)
-
   const handlePlayerSelection = (playerId: number) => {
     if (teams.black.some(p => p.id === playerId)) {
       removeFromTeam('black', playerId)
@@ -478,46 +476,6 @@ const Matches: React.FC = () => {
     return { black, orange }
   }
 
-  const sortTeams = async () => {
-    if (!isFirstMatchToday) {
-      toast.error('Sorteio permitido apenas na primeira partida do dia')
-      return
-    }
-    if (selectedPlayers.length < 6) {
-      toast.error('Selecione pelo menos 6 jogadores')
-      return
-    }
-
-    const selected = players.filter(p => selectedPlayers.includes(p.id))
-    const gkCandidates = selected.filter(p => p.position === 'Goleiro')
-    if (gkCandidates.length >= 3) {
-      setGkModal({ open: true, candidates: gkCandidates })
-      setGkAsFieldId(null)
-      return
-    }
-
-    try {
-      const response = await api.post('/api/matches/sort-teams', {
-        player_ids: selectedPlayers
-      })
-      const { black_team, orange_team, orange_win_streak } = response.data
-      const blackPlayers = players.filter(p => black_team.includes(p.id))
-      const orangePlayers = players.filter(p => orange_team.includes(p.id))
-      setTeams({ black: blackPlayers, orange: orangePlayers })
-      // calcular banco (aguardando fora)
-      const teamIds = new Set<number>([...black_team, ...orange_team])
-      const presentIds = Object.keys(presentMap).filter(id => presentMap[Number(id)]).map(Number)
-      const benchPlayers = players.filter(p => presentIds.includes(p.id) && !teamIds.has(p.id))
-      const benchIds = benchPlayers.map(p => p.id)
-      setBench(benchPlayers)
-      try {
-        localStorage.setItem('matchBench', JSON.stringify(Array.from(new Set(benchIds))))
-      } catch { void 0 }
-      toast.success(`Times sorteados! Sequência de vitórias laranja: ${orange_win_streak}`)
-    } catch (error: unknown) {
-      toast.error('Erro ao sortear times')
-    }
-  }
   const addToTeam = (team: 'black' | 'orange', playerId: number) => {
     const inBlack = teams.black.some(p => p.id === playerId)
     const inOrange = teams.orange.some(p => p.id === playerId)

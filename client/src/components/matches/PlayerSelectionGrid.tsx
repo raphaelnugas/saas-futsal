@@ -75,14 +75,14 @@ const PlayerSelectionGrid: React.FC<PlayerSelectionGridProps> = ({
           <div className="mt-2 flex items-center space-x-1">
             <button
               onClick={(e) => { e.stopPropagation(); onAddToTeam('black', player.id) }}
-              disabled={isFirstMatchToday || teams.black.some(p => p.id === player.id) || !presentMap[player.id]}
+              disabled={teams.black.some(p => p.id === player.id) || !presentMap[player.id]}
               className="px-2 py-1 rounded bg-black text-white text-xs disabled:opacity-50"
             >
               Preto
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onAddToTeam('orange', player.id) }}
-              disabled={isFirstMatchToday || teams.orange.some(p => p.id === player.id) || !presentMap[player.id]}
+              disabled={teams.orange.some(p => p.id === player.id) || !presentMap[player.id]}
               className="px-2 py-1 rounded bg-orange-500 text-white text-xs disabled:opacity-50"
             >
               Laranja

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
-import { Plus, Play, RotateCcw, Trophy, Clock, Trash2 } from 'lucide-react'
+import { Plus, Play, Trophy, Clock, Trash2 } from 'lucide-react'
 import api from '../services/api'
 import { logError } from '../services/logger'
 import { useAuth } from '../hooks/useAuth'
@@ -224,9 +224,7 @@ const Matches: React.FC = () => {
   }, [matches, currentSundayDate])
 
   const startMatchButtonRef = useRef<HTMLButtonElement>(null)
-  const selectedCount = isFirstMatchToday
-    ? selectedPlayers.length
-    : teams.black.length + teams.orange.length
+  const selectedCount = teams.black.length + teams.orange.length
   const isTieModalOpen = tieModal.open || pendingTieDeciderMatchId !== null
 
   useEffect(() => {
@@ -455,27 +453,6 @@ const Matches: React.FC = () => {
       removeFromTeam('orange', playerId)
       return
     }
-    if (!isFirstMatchToday) {
-      return
-    }
-    setSelectedPlayers(prev => {
-      const isSelected = prev.includes(playerId)
-      let next = prev
-      if (isSelected) {
-        next = prev.filter(id => id !== playerId)
-      } else if (prev.length < maxPlayersPerMatch) {
-        next = [...prev, playerId]
-      }
-
-      // Se selecionou o último jogador, faz scroll para o botão de sortear
-      if (!isSelected && next.length === maxPlayersPerMatch) {
-        setTimeout(() => {
-          sortButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }, 100)
-      }
-
-      return next
-    })
   }
 
   const sortTeamsLocal = (list: Player[], overrideKeeperId?: number) => {
@@ -2111,16 +2088,6 @@ const Matches: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-medium text-gray-900">Times</h3>
               <div className="flex items-center space-x-2">
-                {!rodizioMode && isFirstMatchToday && (
-                  <button
-                    ref={sortButtonRef}
-                    onClick={sortTeams}
-                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-success-600 hover:bg-success-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-success-500"
-                  >
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Sortear Times
-                  </button>
-                )}
               </div>
             </div>
             {/* Lista manual removida: botões Preto/Laranja agora estão na seleção acima */}
